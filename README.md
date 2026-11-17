@@ -7,6 +7,7 @@ python main.py           # pricing/sizing/quoting demo with dry-run orders
 python run_phase1.py     # ticker mapping + coverage/band audit (one pass + gate report)
 python run_phase1.py --loop 300   # audit pass every 5 min; leave running for days
 python run_phase1.py --report     # gate report from accumulated SQLite data
+python -m unittest -v             # tests
 ```
 
 Reviewing this for someone? Start with `FRIEND-REVIEW.md`.
@@ -16,7 +17,7 @@ What it does: devigs Pinnacle/Circa/BookMaker (mock feed), builds weighted conse
 ## Files
 
 - `pricing.py` — devig (multiplicative + power), consensus, isotonic ladder smoothing
-- `quoting.py` — quote band + bankroll sizing (`Config` holds all knobs)
+- `quoting.py` — quote band + bankroll sizing + outlier guards: no quote if edge > 8¢ (`max_edge`) or the sharps disagree by > 4¢ (`max_sharp_spread`); `Config` holds all knobs
 - `mapping.py` — Kalshi↔vendor ticker matching: normalize → exact → fuzzy → overrides.csv; unmatched lines never trade
 - `vendor_adapter.py` — vendor interface + mock; a real (Unabated/OpticOdds) adapter is one class with the same `.fetch()` contract
 - `audit.py` / `run_phase1.py` — coverage + band-frequency study into SQLite, with pass/fail gate report

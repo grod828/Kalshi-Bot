@@ -6,7 +6,7 @@ Demo orders:  set DRY_RUN=False and fill in KEY_ID / PRIVATE_KEY_PATH below
 """
 from kalshi_client import KalshiClient
 from mock_feed import CORNERS_LADDER, HR_PROPS
-from pricing import consensus_fair, ladder_fair
+from pricing import consensus_fair, ladder_fair, sharp_spread
 from quoting import Config, compute_quote, size_ladder
 
 DRY_RUN = True
@@ -26,7 +26,8 @@ print("=" * 70)
 line_budget = cfg.event_budget / cfg.lines_per_event_hr
 for ticker, m in HR_PROPS.items():
     fair = consensus_fair(m["sharps"])
-    q = compute_quote(fair, m["dk_fd"], side="yes", line_budget=line_budget, cfg=cfg)
+    q = compute_quote(fair, m["dk_fd"], side="yes", line_budget=line_budget, cfg=cfg,
+                      sharp_spread=sharp_spread(m["sharps"]))
     print(f"\n{m['desc']}  [{ticker}]")
     print(f"  sharp consensus fair P(HR) = {fair:.3f}")
     print(f"  {q.reason}")
@@ -47,7 +48,8 @@ print("  smoothed fair P(over):", "  ".join(f"{l}:{p:.3f}" for l, p in fairs))
 
 dk_fd_by_line = {line: r["dk_fd"] for line, r in CORNERS_LADDER["rungs"].items()}
 total_risk = 0.0
-for line, q in size_ladder(fairs, dk_fd_by_line, CORNERS_LADDER["side"], cfg):
+spreads = {line: sharp_spread(r["sharps"]) for line, r in CORNERS_LADDER["rungs"].items()}
+for line, q in size_ladder(fairs, dk_fd_by_line, CORNERS_LADDER["side"], cfg, spreads):
     print(f"\n  Over {line}: {q.reason if q else 'no data'}")
     if q and q.contracts > 0:
         risk = q.contracts * q.price_cents / 100

@@ -13,7 +13,7 @@ import time
 
 import config
 from mapping import Mapping
-from pricing import BookQuote, consensus_fair
+from pricing import BookQuote, consensus_fair, sharp_spread
 from quoting import Config as StratConfig
 from quoting import compute_quote
 
@@ -73,7 +73,8 @@ def run_audit_pass(
         fair = consensus_fair(sharps, max_age_s=config.MAX_QUOTE_AGE_S)
         if fair is None:
             continue
-        q = compute_quote(fair, retail, side, line_budget, strat)
+        q = compute_quote(fair, retail, side, line_budget, strat,
+                          sharp_spread=sharp_spread(sharps, max_age_s=config.MAX_QUOTE_AGE_S))
         quotable = int(q is not None and q.contracts > 0)
         con.execute(
             "INSERT INTO band_log VALUES (?,?,?,?,?,?,?,?,?,?,?)",
