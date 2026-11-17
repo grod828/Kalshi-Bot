@@ -26,6 +26,7 @@ import urllib.parse
 import urllib.request
 
 import config
+from fees import WORST_CASE, FeeSchedule, schedule_from_api
 from mapping import MarketKey
 
 BASES = {
@@ -107,13 +108,26 @@ def _get(url: str, retries: int = 4, timeout: float = 30) -> dict:
 
 
 class LiveKalshiMarkets:
-    """Drop-in for MockKalshiMarkets: .fetch() -> {ticker: MarketKey}."""
+    """Drop-in for MockKalshiMarkets: .fetch() -> {ticker: MarketKey}.
+    After fetch(), .fees maps each ticker to its Kalshi FeeSchedule
+    (series fee_type/fee_multiplier, with event overrides applied)."""
 
     def __init__(self, env: str = "", series: dict[str, list[str]] | None = None,
                  pause_s: float = 0.25, verbose: bool = True):
         self.base = BASES[env or config.KALSHI_DATA_ENV]
         self.series = series or config.KALSHI_SERIES
         self.pause_s, self.verbose = pause_s, verbose
+        self.fees: dict[str, FeeSchedule] = {}
+
+    def series_info(self, series_ticker: str) -> dict:
+        """GET /series/{t}; {} on failure (fees then fall back to worst case)."""
+        try:
+            return _get(f"{self.base}/series/{series_ticker}").get("series", {})
+        except (urllib.error.URLError, ValueError) as e:
+            if self.verbose:
+                print(f"  kalshi {series_ticker}: series lookup failed ({e}); "
+                      f"assuming worst-case fees")
+            return {}
 
     def events(self, series_ticker: str):
         cursor = ""
@@ -133,13 +147,20 @@ class LiveKalshiMarkets:
         out: dict[str, MarketKey] = {}
         for mtype, tickers in self.series.items():
             for st in tickers:
+                series = self.series_info(st)
+                time.sleep(self.pause_s)
                 n_events, before = 0, len(out)
                 for ev in self.events(st):
                     n_events += 1
-                    out.update(event_to_keys(mtype, ev))
+                    keys = event_to_keys(mtype, ev)
+                    sched = schedule_from_api(series, ev) if series else WORST_CASE
+                    out.update(keys)
+                    self.fees.update({t: sched for t in keys})
                 if self.verbose:
+                    fee = (f"fees {series.get('fee_type')} x{series.get('fee_multiplier')}"
+                           if series else "fees unknown")
                     print(f"  kalshi {st}: {n_events} open events, "
-                          f"{len(out) - before} {mtype} lines")
+                          f"{len(out) - before} {mtype} lines, {fee}")
         return out
 
 

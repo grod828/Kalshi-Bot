@@ -33,6 +33,7 @@ What it does: devigs Pinnacle/Circa/BookMaker (mock feed), builds weighted conse
 ## Files
 
 - `pricing.py` — devig (multiplicative + power), consensus, isotonic ladder smoothing
+- `fees.py` — Kalshi fee math; edges and sizing are measured **after** fees (see below)
 - `quoting.py` — quote band + bankroll sizing + outlier guards: no quote if edge > 8¢ (`max_edge`) or the sharps disagree by > 4¢ (`max_sharp_spread`); `Config` holds all knobs
 - `mapping.py` — Kalshi↔vendor ticker matching: normalize → exact → fuzzy → overrides.csv; unmatched lines never trade
 - `vendor_adapter.py` — vendor interface + mock; a real (Unabated/OpticOdds) adapter is one class with the same `.fetch()` contract
@@ -44,6 +45,22 @@ What it does: devigs Pinnacle/Circa/BookMaker (mock feed), builds weighted conse
 - `main.py` — the demo
 - `FRIEND-REVIEW.md` — review packet: decisions to critique + questions for experienced operators
 
+## Fees
+
+Kalshi charges `rate × multiplier × P × (1 − P)` per contract, rounded up to the cent
+per order. Takers pay 0.07; makers pay 0.0175, but **only on series whose fee type is
+`quadratic_with_maker_fees`**. Plain `quadratic` series charge resting orders nothing.
+
+- `min_edge` (2¢) is enforced after the fee, and per-contract worst-case loss = price + fee.
+- `--live` reads each series' `fee_type` / `fee_multiplier` and applies event overrides
+  (seen live: a `KXMLBHR` event overrode the series' ×0.5 to ×1).
+- Without real fee data (the mock, `main.py`, a failed lookup) the bot assumes the worst
+  case: maker fees on, ×1. That's why the mock gate reads 62%, not 88%. 2 of 3 mock HR
+  props don't clear 2¢ once a maker fee is charged.
+- As of Nov 2026 every series in `config.KALSHI_SERIES` is plain `quadratic`, so resting
+  quotes pay no fee. Rates are from public fee guides; Kalshi's fee schedule is the
+  source of truth.
+
 ## Going from dry-run to Kalshi demo orders
 
 1. Create a demo account + API key at Kalshi's demo environment; download the RSA private key
@@ -53,4 +70,4 @@ What it does: devigs Pinnacle/Circa/BookMaker (mock feed), builds weighted conse
 
 ## Not in this PoC (phase 2)
 
-Live odds vendor adapter, Kalshi WebSocket book/fill tracking, requote/pull loop, position reconciliation, kill switch, persistence, fee-aware edge floor.
+Live odds vendor adapter, Kalshi WebSocket book/fill tracking, requote/pull loop, position reconciliation, kill switch, persistence, and a check that a quote won't cross Kalshi's book (which would make it a taker and pay the taker fee).

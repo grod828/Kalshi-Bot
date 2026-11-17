@@ -34,18 +34,18 @@ class GuardTests(unittest.TestCase):
     def test_normal_edge_quotes(self):
         q = compute_quote(0.32, DK_FD, "yes", 250, CFG, sharp_spread=0.01)
         self.assertGreater(q.contracts, 0)
-        self.assertLessEqual(q.edge, CFG.max_edge)
+        self.assertLessEqual(q.edge + q.fee, CFG.max_edge)
 
     def test_outlier_edge_refused(self):
         # fair 45% but DK/FD lets us bid 29c -> ~16c "edge": too good to be true
         q = compute_quote(0.45, DK_FD, "yes", 250, CFG)
         self.assertEqual(q.contracts, 0)
         self.assertIn("OUTLIER", q.reason)
-        self.assertGreater(q.edge, CFG.max_edge)
+        self.assertGreater(q.edge + q.fee, CFG.max_edge)
 
     def test_edge_exactly_at_cap_still_quotes(self):
         q = compute_quote(0.37, DK_FD, "yes", 250, CFG)   # bid 29c, edge 8c
-        self.assertAlmostEqual(q.edge, 0.08)
+        self.assertAlmostEqual(q.edge + q.fee, 0.08)       # cap is on the pre-fee edge
         self.assertGreater(q.contracts, 0)
 
     def test_sharp_disagreement_refused(self):

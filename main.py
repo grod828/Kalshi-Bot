@@ -17,7 +17,9 @@ cfg = Config(bankroll=50_000)
 client = KalshiClient(KEY_ID, PRIVATE_KEY_PATH, dry_run=DRY_RUN)
 
 print(f"Bankroll ${cfg.bankroll:,.0f} | deployable ${cfg.deployable:,.0f} | "
-      f"event budget ${cfg.event_budget:,.0f} | max {cfg.max_concurrent_events} concurrent events\n")
+      f"event budget ${cfg.event_budget:,.0f} | max {cfg.max_concurrent_events} concurrent events")
+print(f"Fees: {cfg.fees.source} ({cfg.fees.fee_type} x{cfg.fees.multiplier:g}, "
+      f"{cfg.fee_role}); edges below are AFTER fees\n")
 
 # ---------- MLB HR props: one-way YES bids ----------
 print("=" * 70)
@@ -32,7 +34,7 @@ for ticker, m in HR_PROPS.items():
     print(f"  sharp consensus fair P(HR) = {fair:.3f}")
     print(f"  {q.reason}")
     if q.contracts > 0:
-        print(f"  worst case loss ${q.contracts * q.price_cents / 100:,.0f} "
+        print(f"  worst case loss ${q.contracts * (q.price_cents / 100 + q.fee):,.0f} incl. fees "
               f"(line budget ${line_budget:,.0f})")
         client.place_limit_order(ticker, q.side, q.price_cents, q.contracts)
 
@@ -52,7 +54,7 @@ spreads = {line: sharp_spread(r["sharps"]) for line, r in CORNERS_LADDER["rungs"
 for line, q in size_ladder(fairs, dk_fd_by_line, CORNERS_LADDER["side"], cfg, spreads):
     print(f"\n  Over {line}: {q.reason if q else 'no data'}")
     if q and q.contracts > 0:
-        risk = q.contracts * q.price_cents / 100
+        risk = q.contracts * (q.price_cents / 100 + q.fee)
         total_risk += risk
         client.place_limit_order(CORNERS_LADDER["ticker_fmt"].format(line=line),
                                  q.side, q.price_cents, q.contracts)

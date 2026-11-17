@@ -51,7 +51,11 @@ min_edge during the lineup-risk window (last 4h).
     in that window (we default +1¢), or just eat it?
 11. How early do you start quoting? We default 12h pre-start — is early resting
     liquidity picked off overnight, or is it free flow?
-12. Maker fees per series — which series were quietly unprofitable after fees?
+12. Maker fees per series: which series were quietly unprofitable after fees? (Our
+    series are all `quadratic` today, so resting quotes are free and only crossing
+    pays 0.07×P(1−P). Edges and sizing are now net of fees, and unknown schedules
+    assume maker fees. Has Kalshi ever moved a series you trade onto maker fees, and
+    did it kill the edge? Under maker fees our thin HR edges mostly disappear.)
 
 **Inventory & news (after we're filled)**
 13. News breaks after a fill: a lineup scratch, or an injury that shifts usage
