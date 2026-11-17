@@ -112,4 +112,7 @@ def gate_report(con: sqlite3.Connection) -> str:
         pct = total_q / total_n
         lines.append(f"OVERALL: {pct:.0%} quotable "
                      f"({'PASS' if pct >= 0.30 else 'FAIL'} vs 30% gate)")
+    else:
+        lines.append("OVERALL: no verdict — no line has both a mapping and "
+                     "sharp + DK/FD quotes yet (mock odds vendor vs live Kalshi?)")
     return "\n".join(lines)

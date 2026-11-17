@@ -101,13 +101,16 @@ def match_markets(
     return out
 
 
-def report(mappings: list[Mapping]) -> str:
+def report(mappings: list[Mapping], max_listed: int = 25) -> str:
     by = lambda s: [m for m in mappings if m.status == s]
     lines = [f"mapped: {len(by('exact'))} exact, {len(by('override'))} override, "
              f"{len(by('fuzzy'))} fuzzy (REVIEW), {len(by('unmatched'))} unmatched (NO TRADE)"]
     for m in by("fuzzy"):
         lines.append(f"  REVIEW  {m.kalshi_ticker} -> {m.vendor_id}  ({m.score:.2f})")
-    for m in by("unmatched"):
+    unmatched = by("unmatched")
+    for m in unmatched[:max_listed]:
         lines.append(f"  UNMATCHED  {m.kalshi_ticker}  (best {m.vendor_id or '-'} {m.score:.2f})"
                      f"  -> add to overrides.csv if it's real")
+    if len(unmatched) > max_listed:
+        lines.append(f"  ... and {len(unmatched) - max_listed} more unmatched")
     return "\n".join(lines)

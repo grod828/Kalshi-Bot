@@ -7,8 +7,24 @@ python main.py           # pricing/sizing/quoting demo with dry-run orders
 python run_phase1.py     # ticker mapping + coverage/band audit (one pass + gate report)
 python run_phase1.py --loop 300   # audit pass every 5 min; leave running for days
 python run_phase1.py --report     # gate report from accumulated SQLite data
-python -m unittest -v             # tests
+python run_phase1.py --live       # same audit against REAL Kalshi markets (public API, no key)
+python kalshi_markets.py          # just list what Kalshi has open right now
+python -m unittest -v             # all tests (offline): live-market parser + quoting guards
 ```
+
+### Live Kalshi markets (`--live`)
+
+Reads open events for the series in `config.KALSHI_SERIES` from Kalshi's public
+market-data API (prod by default, `KALSHI_DATA_ENV=demo` to switch). No key, no
+orders. Results go to `phase1_audit_live.sqlite`, kept apart from mock runs; pass
+`--live` to `--report` / `--loop` too.
+
+- Corners: Kalshi lists "9+ total corners", which is stored as line 8.5 so it
+  maps to a sportsbook "Over 8.5".
+- MLB HR: only the 1+ HR prop is kept (2+ markets skipped). `KXMLBHR` has no
+  open events in the offseason.
+- The odds side is still the mock vendor, so every live line shows UNMATCHED
+  and the gate report gives no verdict until a real vendor adapter exists.
 
 Reviewing this for someone? Start with `FRIEND-REVIEW.md`.
 
@@ -24,6 +40,7 @@ What it does: devigs Pinnacle/Circa/BookMaker (mock feed), builds weighted conse
 - `config.py` — keys, series tickers, books, thresholds (env-var overridable)
 - `mock_feed.py` — mock sharp + DK/FD odds for `main.py`
 - `kalshi_client.py` — RSA-PSS signed Kalshi client, demo env by default
+- `kalshi_markets.py` — live Kalshi market discovery (public, read-only) → `MarketKey`s
 - `main.py` — the demo
 - `FRIEND-REVIEW.md` — review packet: decisions to critique + questions for experienced operators
 
