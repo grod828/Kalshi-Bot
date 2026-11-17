@@ -7,10 +7,19 @@ KALSHI_ENV = os.getenv("KALSHI_ENV", "demo")            # "demo" | "prod"
 KALSHI_KEY_ID = os.getenv("KALSHI_KEY_ID", "")
 KALSHI_PRIVATE_KEY_PATH = os.getenv("KALSHI_PK_PATH", "kalshi_private_key.pem")
 
-# Series tickers to scan. Verify against GET /series — these move.
+# Where Phase 1 gets its Kalshi market list: "mock" (fixture, offline) or
+# "live" (public GET /events — read-only, no key, places nothing).
+KALSHI_MARKETS = os.getenv("KALSHI_MARKETS", "mock")
+# Which exchange to read market data from. Separate from KALSHI_ENV (orders):
+# coverage only means something against prod's real listings.
+KALSHI_DATA_ENV = os.getenv("KALSHI_DATA_ENV", "prod")   # "prod" | "demo"
+
+# Series tickers to scan (verified against GET /series, Nov 2026).
+# Total-corners series only; Kalshi's *TCORNERS series are team corners.
 KALSHI_SERIES = {
-    "mlb_hr": ["KXMLBHR"],            # player home-run series (verify exact ticker)
-    "corners": ["KXEPLCORN", "KXUCLCORN"],  # soccer corners series (verify)
+    "mlb_hr": ["KXMLBHR"],            # "Pro Baseball Home Runs" (empty in offseason)
+    "corners": ["KXEPLCORNERS", "KXUCLCORNERS", "KXLALIGACORNERS",
+                "KXSERIEACORNERS", "KXBUNDESLIGACORNERS", "KXLIGUE1CORNERS"],
 }
 
 # ---- Odds vendor ----
@@ -34,4 +43,6 @@ FUZZY_THRESHOLD = 0.82       # difflib ratio below this -> needs manual review
 OVERRIDES_CSV = "overrides.csv"
 
 # ---- Audit ----
-AUDIT_DB = "phase1_audit.sqlite"
+# Live and mock runs get separate DBs so fixture passes never pollute real stats.
+AUDIT_DB = os.getenv("AUDIT_DB", "phase1_audit_live.sqlite" if KALSHI_MARKETS == "live"
+                     else "phase1_audit.sqlite")
