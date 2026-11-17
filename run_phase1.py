@@ -1,16 +1,22 @@
 """Phase 1 entry point: map markets, audit coverage + band frequency.
 
   python run_phase1.py            one pass (mock data, no keys needed)
+  python run_phase1.py --live     same, but real Kalshi markets (public API, no key)
   python run_phase1.py --loop 300 pass every 300s (leave running for days)
   python run_phase1.py --report   print gate report from accumulated DB
 
-With real keys: set KALSHI_ENV/KALSHI_KEY_ID/... env vars, implement your
-vendor adapter, and set ODDS_VENDOR — this file doesn't change.
+--live is the same as KALSHI_MARKETS=live and writes to phase1_audit_live.sqlite
+(add --live to --report/--loop too). The odds side stays on the mock vendor
+until you implement an adapter and set ODDS_VENDOR — this file doesn't change.
 """
 from __future__ import annotations
 
+import os
 import sys
 import time
+
+if "--live" in sys.argv:          # must happen before config is imported
+    os.environ["KALSHI_MARKETS"] = "live"
 
 import config
 from audit import gate_report, open_db, run_audit_pass
@@ -20,11 +26,12 @@ from vendor_adapter import MockKalshiMarkets, get_vendor_adapter
 
 
 def kalshi_markets():
-    """Swap MockKalshiMarkets for a real GET /markets parser once keys exist."""
-    if config.KALSHI_KEY_ID:
-        raise NotImplementedError(
-            "Real Kalshi market discovery: parse GET /markets for series in "
-            "config.KALSHI_SERIES into MarketKey objects (see MockKalshiMarkets).")
+    """Kalshi side of the mapping: fixture, or live public market data."""
+    if config.KALSHI_MARKETS == "live":
+        from kalshi_markets import LiveKalshiMarkets
+        print(f"Kalshi markets: LIVE ({config.KALSHI_DATA_ENV}), "
+              f"odds vendor: {config.VENDOR}  -> {config.AUDIT_DB}")
+        return LiveKalshiMarkets().fetch()
     return MockKalshiMarkets().fetch()
 
 
