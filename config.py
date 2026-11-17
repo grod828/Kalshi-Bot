@@ -50,7 +50,7 @@ LADDER_MAX_MODEL_SD = 1.0        # don't quote rungs > 1 model SD from a sharp l
 LADDER_MODEL_EXTRA_EDGE = 0.01   # +1c min_edge on rungs priced by the model
 
 # ---- Odds vendor ----
-VENDOR = os.getenv("ODDS_VENDOR", "mock")               # "mock" | "unabated" | ...
+VENDOR = os.getenv("ODDS_VENDOR", "mock")               # "mock" | "sportsgameodds"
 VENDOR_API_KEY = os.getenv("ODDS_VENDOR_KEY", "")
 SHARP_BOOKS = ["pinnacle", "circa", "bookmaker"]
 RETAIL_BOOKS = ["draftkings", "fanduel"]

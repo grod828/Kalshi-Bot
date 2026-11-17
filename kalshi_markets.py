@@ -110,11 +110,14 @@ def event_to_keys(market_type: str, event: dict) -> dict[str, MarketKey]:
 
 
 # ---------------------------------------------------------------- HTTP
-def _get(url: str, retries: int = 4, timeout: float = 30) -> dict:
-    """GET JSON; back off on 429/5xx (Kalshi rate-limits bursts of reads)."""
+def _get(url: str, retries: int = 4, timeout: float = 30,
+         headers: dict | None = None) -> dict:
+    """GET JSON; back off on 429/5xx (Kalshi rate-limits bursts of reads).
+    Shared by the odds vendor adapter, which passes its API-key header."""
     for attempt in range(retries + 1):
         try:
-            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            req = urllib.request.Request(url, headers={"Accept": "application/json",
+                                                       **(headers or {})})
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return json.load(r)
         except urllib.error.HTTPError as e:

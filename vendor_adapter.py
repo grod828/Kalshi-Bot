@@ -142,6 +142,9 @@ class MockKalshiMarkets:
 def get_vendor_adapter(name: str):
     if name == "mock":
         return MockVendorAdapter()
+    if name == "sportsgameodds":
+        from sgo_adapter import SportsGameOddsAdapter
+        return SportsGameOddsAdapter()
     raise NotImplementedError(
         f"Vendor '{name}' not implemented yet. Write an adapter class with a "
         f".fetch() -> (markets, quotes) matching MockVendorAdapter's contract.")
