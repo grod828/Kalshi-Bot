@@ -44,10 +44,15 @@ def one_pass(con) -> None:
     mappings = match_markets(kalshi, vendor_markets)
     print(report(mappings))
     stats = run_audit_pass(mappings, kalshi, vendor_quotes,
-                           StratConfig(bankroll=50_000), con, fees_by_ticker=fees)
+                           StratConfig(bankroll=50_000), con, fees_by_ticker=fees,
+                           vendor_markets=vendor_markets)
     for mtype, st in stats.items():
         print(f"  {mtype}: {st['mapped']}/{st['kalshi_lines']} mapped, "
-              f"{st['sharp']} with sharp quotes, {st['retail']} with DK/FD quotes")
+              f"{st['sharp']} with sharp fair value"
+              + (f" ({st['modeled']} from ladder model)" if st["modeled"] else "")
+              + f", {st['retail']} with DK/FD quotes")
+        for why, n in st["skipped"].items():
+            print(f"    {n} not priced: {why}")
 
 
 if __name__ == "__main__":

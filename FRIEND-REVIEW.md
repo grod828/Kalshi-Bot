@@ -5,7 +5,8 @@ with `python main.py` and `python run_phase1.py` — zero keys, zero installs.*
 
 ## What this is
 
-One-way maker on Kalshi sports lines (MLB player HRs, soccer corners ladders),
+One-way maker on Kalshi sports lines (MLB player HRs, soccer corners ladders,
+NFL rushing/receiving yardage ladders),
 **pre-game only** — all quotes pulled at game start, nothing in-play.
 Fair value = weighted no-vig consensus of Pinnacle/Circa/BookMaker. Quote only when
 the counterparty beats DK/FD by ≥1¢ AND we keep ≥2¢ vs fair. $50k bankroll,
@@ -41,6 +42,14 @@ min_edge during the lineup-risk window (last 4h).
    not actually price-shop against sportsbooks?
 7. Ladder: we isotonic-smooth crossed rungs and size the whole ladder as one
    bucket weighted toward the 50% rung. How do you handle rung correlation?
+7b. NFL yardage ladders: sharps quote one main line, Kalshi lists ~10 rungs. We price
+   rungs from a lognormal fitted to the sharp lines, assuming a spread of ln(yards)
+   of 0.60 for rushing and 0.70 for receiving when only one line exists. We add +1¢
+   edge on model-priced rungs and skip rungs > 1 SD from a sharp line. What
+   distribution do you use (lognormal, gamma, empirical), and what spreads? Do you
+   get sharp alternate lines anywhere? Do the DK/FD milestones ("40+ yds") actually
+   pull flow onto Kalshi's ladders, and is bidding NO (selling the overs) the side
+   that fills?
 
 **Execution (pre-game only)**
 8. What rate tier do you run, and does Basic (10 writes/s) survive the pull-everything

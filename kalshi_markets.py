@@ -11,6 +11,8 @@ Kalshi conventions handled here (verified against the live API, Nov 2026):
   mlb_hr   "Sal Frelick: 1+ home runs?", strike_type=greater, floor_strike=0.5
            -> line None (the yes/no HR prop). 2+ HR markets are skipped:
               the strategy only quotes the 1+ prop.
+  yards    "Jonathan Taylor: 25+ rushing yards", strike_type=greater,
+           floor_strike=24.5 -> line 24.5 (player = entity; ladders.py prices it)
   date     taken from the event ticker (KXEPLCORNERS-26NOV23BREEVE -> 2026-11-23),
            which is the "originally scheduled" date in Kalshi's rules text.
 
@@ -78,6 +80,14 @@ def event_to_keys(market_type: str, event: dict) -> dict[str, MarketKey]:
                 continue
             out[mkt["ticker"]] = MarketKey("corners", matchup, line, date,
                                            event_id=event.get("event_ticker", ""))
+        elif market_type in config.LADDER_TYPES:
+            # "Jonathan Taylor: 25+ rushing yards", strike_type greater, 24.5
+            if mkt.get("strike_type") != "greater" or mkt.get("floor_strike") is None:
+                continue
+            player = mkt.get("title", "").split(":")[0].strip()
+            if player:
+                out[mkt["ticker"]] = MarketKey(market_type, player, float(mkt["floor_strike"]),
+                                               date, event_id=event.get("event_ticker", ""))
         elif market_type == "mlb_hr":
             # 1+ HR only: floor_strike 0.5 with strike_type "greater"
             if (mkt.get("strike_type"), mkt.get("floor_strike")) != ("greater", 0.5):

@@ -8,6 +8,9 @@ wrong game, wrong line). Rules here:
   - overrides.csv always wins           -> your manual truth table
   - ambiguous keys (two markets look identical, e.g. a doubleheader)
                                         -> UNMATCHED; resolve with overrides.csv
+  - ladder markets (config.LADDER_TYPES) with no vendor market at that exact
+    line but the same player/date      -> "model": priced off the player's
+                                           sharp lines by ladders.py
 Matchups ("Man City vs Fulham") are compared side by side: each team is
 normalized and aliased (team_aliases.py), and home/away order is ignored.
 """
@@ -117,7 +120,7 @@ class Mapping:
     kalshi_ticker: str
     vendor_id: str
     score: float          # 1.0 = exact/override
-    status: str           # "exact" | "fuzzy" | "override" | "unmatched"
+    status: str           # "exact" | "fuzzy" | "override" | "model" | "unmatched"
     note: str = ""        # why it's unmatched, when we can tell
 
 
@@ -130,6 +133,11 @@ def load_overrides(path: str = "") -> dict[str, str]:
         return {r["kalshi_ticker"]: r["vendor_id"] for r in csv.DictReader(f)}
 
 
+def ladder_group(mk: MarketKey) -> str:
+    """A player's whole ladder on one date (line left out)."""
+    return f"{mk.market_type}|{norm_entity(mk.entity)}|{mk.game_date}"
+
+
 def _shift(date: str, days: int) -> str:
     return (dt.date.fromisoformat(date) + dt.timedelta(days=days)).isoformat()
 
@@ -139,11 +147,19 @@ def match_markets(
     vendor: dict[str, MarketKey],       # vendor_id -> key
     overrides: dict[str, str] | None = None,
     threshold: float = config.FUZZY_THRESHOLD,
+    ladder_types: set[str] | None = None,
 ) -> list[Mapping]:
     overrides = overrides if overrides is not None else load_overrides()
+    ladder_types = config.LADDER_TYPES if ladder_types is None else ladder_types
     vendor_by_key: dict[str, list[str]] = defaultdict(list)
+    vendor_by_group: dict[str, list[str]] = defaultdict(list)
     for vid, mk in vendor.items():
         vendor_by_key[mk.key()].append(vid)
+        if mk.market_type in ladder_types:
+            vendor_by_group[ladder_group(mk)].append(vid)
+
+    def nearest_line(vids: list[str], line: float | None) -> str:
+        return min(vids, key=lambda v: abs((vendor[v].line or 0) - (line or 0)))
     kalshi_key_count: dict[str, int] = defaultdict(int)
     for kmk in kalshi.values():
         kalshi_key_count[kmk.key()] += 1
@@ -165,24 +181,35 @@ def match_markets(
         if vids:
             out.append(Mapping(ticker, vids[0], 1.0, "exact"))
             continue
-        # fuzzy: same type/date/line, best entity similarity
+        ladder = kmk.market_type in ladder_types
+        group = vendor_by_group.get(ladder_group(kmk)) if ladder else None
+        if group:
+            out.append(Mapping(ticker, nearest_line(group, kmk.line), 1.0, "model",
+                               "no vendor market at this line: priced from the player's ladder"))
+            continue
+        # fuzzy: same type/date (and line, except ladders), best entity similarity
         kent = norm_entity(kmk.entity)
         best_vid, best = "", 0.0
         for vid, vmk in vendor.items():
-            if (vmk.market_type, vmk.game_date, vmk.line) != (kmk.market_type, kmk.game_date, kmk.line):
+            if (vmk.market_type, vmk.game_date) != (kmk.market_type, kmk.game_date):
+                continue
+            if not ladder and vmk.line != kmk.line:
                 continue
             r = SequenceMatcher(None, kent, norm_entity(vmk.entity)).ratio()
             if r > best:
                 best, best_vid = r, vid
+        if ladder and best_vid:   # same player: point at their nearest line
+            best_vid = nearest_line(vendor_by_group[ladder_group(vendor[best_vid])], kmk.line)
         if best >= threshold:
             out.append(Mapping(ticker, best_vid, best, "fuzzy"))
             continue
         # Diagnose the classic date bug: same line one day off -> vendor in UTC?
         note = ""
         for days in (1, -1):
-            shifted = MarketKey(kmk.market_type, kmk.entity, kmk.line,
-                                _shift(kmk.game_date, days)).key()
-            if shifted in vendor_by_key:
+            shifted_mk = MarketKey(kmk.market_type, kmk.entity, kmk.line,
+                                   _shift(kmk.game_date, days))
+            if shifted_mk.key() in vendor_by_key or (
+                    ladder and ladder_group(shifted_mk) in vendor_by_group):
                 note = (f"vendor has this on {_shift(kmk.game_date, days)}: vendor dates "
                         f"in UTC? set game_date with mapping.kalshi_game_date()")
                 break
@@ -193,6 +220,7 @@ def match_markets(
 def report(mappings: list[Mapping], max_listed: int = 25) -> str:
     by = lambda s: [m for m in mappings if m.status == s]
     lines = [f"mapped: {len(by('exact'))} exact, {len(by('override'))} override, "
+             f"{len(by('model'))} ladder-model, "
              f"{len(by('fuzzy'))} fuzzy (REVIEW), {len(by('unmatched'))} unmatched (NO TRADE)"]
     for m in by("fuzzy"):
         lines.append(f"  REVIEW  {m.kalshi_ticker} -> {m.vendor_id}  ({m.score:.2f})")

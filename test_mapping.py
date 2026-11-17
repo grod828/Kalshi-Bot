@@ -122,32 +122,64 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(corners("B vs A").event(), corners("A vs B").event())
 
 
-class EventsPerDayGateTests(unittest.TestCase):
+class PerSportGateTests(unittest.TestCase):
     def setUp(self):
         self.con = sqlite3.connect(":memory:")
         self.con.executescript(audit.SCHEMA)
 
-    def log(self, n_events, date="2026-11-21", mapped=1, ts=1.0):
+    def log(self, n_events, date="2026-11-21", mapped=1, ts=1.0, mtype="corners",
+            prefix="KXEPLCORNERS-26NOV21G"):
         for i in range(n_events):
             self.con.execute("INSERT INTO event_log VALUES (?,?,?,?,?,?,?)",
-                             (ts, "corners", f"EV{i}", date, 5, mapped, 0))
+                             (ts, mtype, f"{prefix}{i}", date, 5, mapped, 0))
 
-    def test_passes_at_threshold(self):
+    def test_soccer_counts_per_week(self):
+        self.log(12, date="2026-11-21")                 # Sat
+        self.log(8, date="2026-11-23", prefix="KXEPLCORNERS-26NOV23G")   # Mon, same week
+        r = audit.gate_report(self.con)
+        self.assertIn("part 1 games/week: avg 20.0", r)
+        self.assertIn("(PASS vs 20)", r)
+
+    def test_same_games_seen_again_not_double_counted(self):
         self.log(20)
-        self.log(20, ts=2.0)          # same games seen again: still 20, not 40
-        self.assertIn("GATE 1 events/day: avg 20.0", audit.gate_report(self.con))
-        self.assertIn("(PASS vs 20)", audit.gate_report(self.con))
+        self.log(20, ts=2.0)
+        self.assertIn("avg 20.0", audit.gate_report(self.con))
 
     def test_fails_below_threshold(self):
         self.log(12)
-        self.assertIn("(FAIL vs 20)", audit.gate_report(self.con))
-        self.assertIn("OVERALL: FAIL", audit.gate_report(self.con))
+        r = audit.gate_report(self.con)
+        self.assertIn("(FAIL vs 20)", r)
+        self.assertIn("SOCCER: FAIL", r)
 
     def test_nothing_mapped_is_no_data_not_fail(self):
         self.log(30, mapped=0)
         r = audit.gate_report(self.con)
-        self.assertIn("GATE 1 events/day: no data", r)
-        self.assertIn("OVERALL: no verdict", r)
+        self.assertIn("no data", r)
+        self.assertIn("SOCCER: no verdict", r)
+
+    def test_sports_judged_separately(self):
+        self.log(20)
+        self.log(3, mtype="mlb_hr", prefix="KXMLBHR-26NOV21G")
+        for i in range(10):
+            self.con.execute("INSERT INTO band_log VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                             (1.0, f"T{i}", "v", "corners", .5, 40, 0, 1, 40, 10, "q"))
+        r = audit.gate_report(self.con)
+        self.assertIn("SOCCER: PASS", r)
+        self.assertIn("MLB: FAIL", r)
+        self.assertIn("ready to trade: soccer", r)
+
+    def test_rush_and_rec_series_are_one_game(self):
+        for series in ("KXNFLRSHYDS", "KXNFLRECYDS"):
+            self.con.execute("INSERT INTO event_log VALUES (?,?,?,?,?,?,?)",
+                             (1.0, "nfl_rush_yds" if "RSH" in series else "nfl_rec_yds",
+                              f"{series}-26NOV19INDHOU", "2026-11-19", 10, 1, 0))
+        self.assertIn("1 / 1 / 0", audit.gate_report(self.con))
+
+    def test_week_runs_tuesday_to_monday(self):
+        self.assertEqual(audit.period_start("2026-11-19", "week"), "2026-11-17")  # Thu
+        self.assertEqual(audit.period_start("2026-11-23", "week"), "2026-11-17")  # Mon
+        self.assertEqual(audit.period_start("2026-11-24", "week"), "2026-11-24")  # Tue
+        self.assertEqual(audit.period_start("2026-11-23", "day"), "2026-11-23")
 
 
 if __name__ == "__main__":
