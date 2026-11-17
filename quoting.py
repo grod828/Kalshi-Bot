@@ -1,0 +1,115 @@
+"""Quote band computation (beat DK/FD + keep edge) and bankroll sizing."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from pricing import BookQuote, american_to_prob
+
+
+@dataclass
+class Config:
+    bankroll: float = 50_000.0
+    reserve_frac: float = 0.20        # never deployed
+    event_risk_frac: float = 0.02     # max worst-case loss per event
+    lines_per_event_hr: int = 4       # HR prop lines quoted per game
+    min_edge: float = 0.02            # keep >= 2c vs sharp fair
+    improvement: float = 0.01         # beat DK/FD by >= 1c
+    depth_multiple: float = 3.0       # size <= 3x top-of-book depth
+    hard_cap_contracts: int = 2000
+
+    @property
+    def deployable(self) -> float:
+        return self.bankroll * (1 - self.reserve_frac)
+
+    @property
+    def event_budget(self) -> float:
+        return self.bankroll * self.event_risk_frac
+
+    @property
+    def max_concurrent_events(self) -> int:
+        return int(self.deployable / self.event_budget)
+
+
+@dataclass
+class Quote:
+    side: str            # "yes" or "no"
+    price_cents: int
+    contracts: int
+    edge: float          # expected edge vs fair, in probability points
+    reason: str
+
+
+def retail_best_no_price(dk_fd: list[BookQuote]) -> float | None:
+    """Best (lowest) vigged NO price a retail bettor can get at DK/FD."""
+    prices = [american_to_prob(q.no_american) for q in dk_fd]
+    return min(prices) if prices else None
+
+
+def retail_best_yes_price(dk_fd: list[BookQuote]) -> float | None:
+    prices = [american_to_prob(q.yes_american) for q in dk_fd]
+    return min(prices) if prices else None
+
+
+def compute_quote(
+    fair_p: float,
+    dk_fd: list[BookQuote],
+    side: str,
+    line_budget: float,
+    cfg: Config,
+    book_depth: int = 500,
+) -> Quote | None:
+    """One-way quote on `side`. Bidding YES at b fills a NO-buyer at (1-b);
+    that (1-b) must beat DK/FD's NO price by >= improvement. Symmetric for NO.
+
+    Returns None (with no order) when the band is empty."""
+    if side == "yes":
+        retail = retail_best_no_price(dk_fd)
+        if retail is None:
+            return None
+        lo = 1 - retail + cfg.improvement   # counterparty does better than DK/FD
+        hi = fair_p - cfg.min_edge          # we keep our edge
+    else:
+        retail = retail_best_yes_price(dk_fd)
+        if retail is None:
+            return None
+        lo = 1 - retail + cfg.improvement
+        hi = (1 - fair_p) - cfg.min_edge
+
+    lo_c, hi_c = max(1, round(lo * 100)), min(99, int(hi * 100))
+    if lo_c > hi_c:
+        return Quote(side, 0, 0, 0.0, f"NO QUOTE: band empty (need >= {lo_c}c to beat DK/FD, "
+                                      f"but edge floor caps at {hi_c}c)")
+    price = lo_c  # bottom of band = max edge; step up later if fills are scarce
+    fair_side = fair_p if side == "yes" else 1 - fair_p
+    edge = fair_side - price / 100
+    worst_case = price / 100  # bid price is max loss per contract
+    contracts = min(
+        int(line_budget / worst_case),
+        int(cfg.depth_multiple * book_depth),
+        cfg.hard_cap_contracts,
+    )
+    if contracts < 1:
+        return Quote(side, price, 0, edge, "NO QUOTE: budget too small for 1 contract")
+    return Quote(side, price, contracts, edge,
+                 f"quote {side.upper()} {price}c x{contracts} | edge {edge:.3f} | "
+                 f"counterparty beats DK/FD ({round(retail*100)}c) at {100-price}c")
+
+
+def size_ladder(
+    ladder_fairs: list[tuple[float, float]],
+    dk_fd_by_line: dict[float, list[BookQuote]],
+    side: str,
+    cfg: Config,
+) -> list[tuple[float, Quote | None]]:
+    """Corners ladder: ONE event budget across all rungs (correlated bucket).
+    Weight rungs by proximity to 50% fair (most two-way flow), then quote each."""
+    if not ladder_fairs:
+        return []
+    weights = [max(0.05, 1 - abs(p - 0.5) * 2) for _, p in ladder_fairs]
+    total_w = sum(weights)
+    out = []
+    for (line, fair_p), w in zip(ladder_fairs, weights):
+        budget = cfg.event_budget * (w / total_w)
+        q = compute_quote(fair_p, dk_fd_by_line.get(line, []), side, budget, cfg)
+        out.append((line, q))
+    return out
