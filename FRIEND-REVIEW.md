@@ -6,7 +6,7 @@ with `python main.py` and `python run_phase1.py` — zero keys, zero installs.*
 ## What this is
 
 One-way maker on Kalshi sports lines (MLB player HRs, soccer corners ladders,
-NFL rushing/receiving yardage ladders),
+NFL rushing/receiving yardage ladders, NFL first TD scorer),
 **pre-game only** — all quotes pulled at game start, nothing in-play.
 Fair value = weighted no-vig consensus of Pinnacle/Circa/BookMaker. Quote only when
 the counterparty beats DK/FD by ≥1¢ AND we keep ≥2¢ vs fair. $50k bankroll,
@@ -50,6 +50,12 @@ min_edge during the lineup-risk window (last 4h).
    get sharp alternate lines anywhere? Do the DK/FD milestones ("40+ yds") actually
    pull flow onto Kalshi's ladders, and is bidding NO (selling the overs) the side
    that fills?
+7c. First TD scorer: we devig each sharp book's full field (power method), skip books
+   whose field sums under 1.05, bid NO on each outcome, and let each outcome use 50%
+   of the game budget, since only one NO can lose. Which books give you a complete
+   sharp first-TD field? Power or multiplicative devig? How often do inactive players
+   settle at Kalshi's "fair market price", and at what price? Is selling longshots
+   the side that fills, or does Kalshi flow sell them too?
 
 **Execution (pre-game only)**
 8. What rate tier do you run, and does Basic (10 writes/s) survive the pull-everything

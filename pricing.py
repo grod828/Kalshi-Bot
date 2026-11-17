@@ -96,6 +96,65 @@ def sharp_spread(
     return max(fairs) - min(fairs) if len(fairs) >= 2 else None
 
 
+def devig_field(implied: dict[str, float], method: str = "power") -> dict[str, float]:
+    """Remove the vig from a one-sided multi-outcome market (first TD scorer):
+    each outcome is quoted yes-only, and their implied probabilities sum to
+    more than 1 (the overround).
+      multiplicative: p_i / sum(p)
+      power:          p_i ** k with k chosen so the results sum to 1; takes more
+                      off longshots, which is where books hide most of the vig
+    Assumes the listed outcomes are the whole field (see field_consensus)."""
+    total = sum(implied.values())
+    if total <= 0:
+        return {}
+    if method != "power" or total <= 1:
+        return {o: p / total for o, p in implied.items()}
+    lo, hi = 1.0, 50.0
+    for _ in range(200):
+        k = (lo + hi) / 2
+        if sum(p ** k for p in implied.values()) > 1:
+            lo = k
+        else:
+            hi = k
+    return {o: p ** k for o, p in implied.items()}
+
+
+def field_consensus(
+    field: dict[str, dict[str, BookQuote]],     # outcome -> book -> yes-only quote
+    weights: dict[str, float] | None = None,
+    max_age_s: float = 120.0,
+    method: str = "power",
+    min_overround: float = 1.05,
+    now: float | None = None,
+) -> dict[str, tuple[float, float | None]]:
+    """Weighted no-vig consensus across sharp books for a whole field.
+    Returns outcome -> (fair, spread across books or None if only one book).
+
+    Each book is devigged on its own field first. A book whose implied
+    probabilities sum to less than min_overround is skipped: it's missing
+    outcomes, and normalizing it would inflate the ones it does list."""
+    weights = weights or DEFAULT_WEIGHTS
+    now = now if now is not None else time.time()
+    per_book: dict[str, dict[str, float]] = {}
+    for outcome, books in field.items():
+        for book, q in books.items():
+            if book.lower() not in weights or q.yes_american is None or (now - q.ts) > max_age_s:
+                continue
+            per_book.setdefault(book.lower(), {})[outcome] = american_to_prob(q.yes_american)
+    fairs: dict[str, list[tuple[float, float]]] = {}
+    for book, implied in per_book.items():
+        if sum(implied.values()) < min_overround:
+            continue
+        for outcome, p in devig_field(implied, method).items():
+            fairs.setdefault(outcome, []).append((weights[book], p))
+    out = {}
+    for outcome, wp in fairs.items():
+        fair = sum(w * p for w, p in wp) / sum(w for w, _ in wp)
+        ps = [p for _, p in wp]
+        out[outcome] = (fair, max(ps) - min(ps) if len(ps) > 1 else None)
+    return out
+
+
 def isotonic_decreasing(probs: list[float]) -> list[float]:
     """Pool-adjacent-violators: enforce p[0] >= p[1] >= ... (over-ladder).
     Used to smooth crossed corner-ladder rungs."""

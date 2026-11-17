@@ -37,7 +37,7 @@ TEAM_ALIASES = {
     "athletic club bilbao": "bilbao",
     "rayo vallecano": "vallecano", "rayo": "vallecano",
     "atletico madrid": "atletico", "atletico de madrid": "atletico",
-    "atl. madrid": "atletico", "atl madrid": "atletico",
+    "atl madrid": "atletico",
     "deportivo alaves": "alaves",
     "deportivo la coruna": "deportivo de la coruna", "deportivo": "deportivo de la coruna",
     "real betis balompie": "real betis", "betis": "real betis",
