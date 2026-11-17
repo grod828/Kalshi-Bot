@@ -23,8 +23,36 @@ orders. Results go to `phase1_audit_live.sqlite`, kept apart from mock runs; pas
   maps to a sportsbook "Over 8.5".
 - MLB HR: only the 1+ HR prop is kept (2+ markets skipped). `KXMLBHR` has no
   open events in the offseason.
-- The odds side is still the mock vendor, so every live line shows UNMATCHED
-  and the gate report gives no verdict until a real vendor adapter exists.
+- With the default mock odds vendor every live line shows UNMATCHED. Use the real
+  feed for a meaningful run: `ODDS_VENDOR=sportsgameodds python run_phase1.py --live`.
+
+### Odds vendor: SportsGameOdds (`sgo_adapter.py`)
+
+```
+export ODDS_VENDOR=sportsgameodds
+export ODDS_VENDOR_KEY=...        # from sportsgameodds.com (free plan available)
+python run_phase1.py --live
+```
+
+- One `GET /v2/events` per league asks for every market we need at once. SGO bills
+  **per event returned**, not per market or book, so bundling is free.
+- Odd IDs used: `batting_homeRuns-PLAYER_ID-game-yn`, `rushing_yards-` /
+  `receiving_yards-PLAYER_ID-game-ou` (with alternate lines),
+  `firstTouchdown-PLAYER_ID-game-yn`, and `cornerKicks-all-game-ou`.
+- SGO's `bookmakereu` is our `bookmaker`. Retail alternate lines with only an over
+  price become yes-only milestones. Start times are converted to Kalshi's Eastern date.
+- **Coverage, per SGO's market table (Nov 2026):**
+
+| Market | Sharp books at SGO | DK/FD | Can be priced? |
+|---|---|---|---|
+| NFL rushing/receiving yards | Pinnacle, Circa, BookMaker | yes | yes |
+| MLB player HR | Circa, Pinnacle | yes | yes |
+| NFL first TD | Circa only | yes | yes, one sharp book (no D/ST or "no TD" outcomes) |
+| Soccer total corners | **none** | yes | **no**: needs another sharp source |
+
+- Quote timestamps are the fetch time. Whether SGO's `lastUpdatedAt` means "price
+  changed" or "price confirmed" still needs checking on live data before the 120s
+  staleness filter relies on it.
 
 ### Phase 1 gate (per sport)
 
@@ -109,7 +137,8 @@ What it does: devigs Pinnacle/Circa/BookMaker (mock feed), builds weighted conse
 - `quoting.py` — quote band + bankroll sizing + outlier guards: no quote if edge > 8¢ (`max_edge`) or the sharps disagree by > 4¢ (`max_sharp_spread`); `Config` holds all knobs
 - `mapping.py` — Kalshi↔vendor ticker matching: normalize → exact → fuzzy → overrides.csv; unmatched and ambiguous lines never trade
 - `team_aliases.py` — team-name aliases (Kalshi's short names ↔ common sportsbook names)
-- `vendor_adapter.py` — vendor interface + mock; a real (Unabated/OpticOdds) adapter is one class with the same `.fetch()` contract
+- `vendor_adapter.py` — vendor interface + mock; `ODDS_VENDOR` picks the adapter
+- `sgo_adapter.py` — SportsGameOdds adapter (real odds feed)
 - `audit.py` / `run_phase1.py` — coverage + band-frequency study into SQLite, with a two-part pass/fail gate report (events/day + quotable)
 - `config.py` — keys, series tickers, books, thresholds (env-var overridable)
 - `mock_feed.py` — mock sharp + DK/FD odds for `main.py`
@@ -143,4 +172,4 @@ per order. Takers pay 0.07; makers pay 0.0175, but **only on series whose fee ty
 
 ## Not in this PoC (phase 2)
 
-Live odds vendor adapter, Kalshi WebSocket book/fill tracking, requote/pull loop, position reconciliation, kill switch, persistence, and a check that a quote won't cross Kalshi's book (which would make it a taker and pay the taker fee).
+Kalshi WebSocket book/fill tracking, requote/pull loop, position reconciliation, kill switch, persistence, and a check that a quote won't cross Kalshi's book (which would make it a taker and pay the taker fee).

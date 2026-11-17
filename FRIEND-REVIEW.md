@@ -30,8 +30,11 @@ min_edge during the lineup-risk window (last 4h).
 
 **Data / vendor**
 1. Which odds feed do you use, and what's its real-world latency on prop/corners
-   moves? Is Unabated's API good enough, or did you need OpticOdds-class speed?
+   moves? We're starting with SportsGameOdds (bills per event, carries Pinnacle,
+   Circa and BookMaker on NFL yardage). Is its prop latency good enough?
 2. Do you get Circa and BookMaker from the same feed, or approximate with fewer books?
+   SGO has **no sharp book on soccer corners** and only Circa on first TD scorer.
+   Where do you get sharp corners prices?
 3. What staleness cutoff do you run? Is 120s naive for props?
 
 **Pricing / quoting**
