@@ -26,16 +26,41 @@ orders. Results go to `phase1_audit_live.sqlite`, kept apart from mock runs; pas
 - The odds side is still the mock vendor, so every live line shows UNMATCHED
   and the gate report gives no verdict until a real vendor adapter exists.
 
-### Phase 1 gate
+### Phase 1 gate (per sport)
 
-Both must pass (thresholds in `config.py`):
-1. **Events/day:** on average at least 20 distinct games per game date have at least
-   one mapped line. Each game is counted once per date, however many passes saw it.
-2. **Quotable:** the quote band is non-empty on at least 30% of priced lines.
+Each sport (`config.SPORT_OF`) is judged on its own, and is ready to trade only if
+both parts pass. Thresholds are in `config.py`, and the defaults are **placeholders**:
 
-The mock fixture is tiny (4 mappable games), so `python run_phase1.py` reads FAIL on
-gate 1 by design. For scale: in mid-November Kalshi lists about 5 corners games a day
-(EPL + La Liga); MLB HR adds roughly 15 games a day in season.
+| Sport | Part 1: mappable games | Why that period |
+|---|---|---|
+| MLB | ≥ 10 per **day** | ~15 games a day in season |
+| NFL | ≥ 10 per **week** | ~14–16 games a week, almost all on Sunday |
+| Soccer | ≥ 20 per **week** | EPL + La Liga ≈ 20 games a round |
+
+Part 2, for every sport: the quote band is non-empty on ≥ 30% of priced lines.
+
+- Weeks run Tuesday–Monday (one NFL week, one soccer round).
+- A game counts once per period, however many passes or series saw it. The NFL
+  rushing and receiving markets for the same game are one game.
+- The mock fixture is tiny, so `python run_phase1.py` reads FAIL for every sport by design.
+
+### NFL yardage ladders (`ladders.py`)
+
+Kalshi lists about 10 rungs per player (`KXNFLRSHYDS`, `KXNFLRECYDS`: "Jonathan Taylor:
+40+ rushing yards", from 10+ to 80+). Sharp books usually quote one main O/U line.
+
+- **Pricing:** every rung is read off a lognormal fitted to the player's sharp lines.
+  With 2+ lines both parameters are fitted; with one, the spread is an assumed value
+  per stat (`LADDER_SIGMA`: **placeholders to calibrate**).
+- **Guards:** model-priced rungs need +1¢ edge (`LADDER_MODEL_EXTRA_EDGE`), and rungs
+  more than 1 model SD from a sharp line aren't quoted (`LADDER_MAX_MODEL_SD`).
+  Lognormal has no mass at 0 yards, so very low rungs are the least trustworthy.
+- **Side:** we bid **NO**, selling the milestone overs retail buys at DK/FD
+  (`QUOTE_SIDE`). A rung is priced only if DK/FD offer that milestone, and their
+  yes-only quotes are fine (`BookQuote(..., no_american=None)`).
+- **Matching:** a Kalshi rung with no vendor market at that exact line maps to the
+  player's ladder (status `model`).
+- **Fees:** both series are plain `quadratic`, so resting orders pay nothing.
 
 ### Matching (`mapping.py`, `team_aliases.py`)
 
@@ -56,6 +81,7 @@ What it does: devigs Pinnacle/Circa/BookMaker (mock feed), builds weighted conse
 ## Files
 
 - `pricing.py` — devig (multiplicative + power), consensus, isotonic ladder smoothing
+- `ladders.py` — NFL yardage ladders: lognormal fitted to the sharp lines prices every Kalshi rung
 - `fees.py` — Kalshi fee math; edges and sizing are measured **after** fees (see below)
 - `quoting.py` — quote band + bankroll sizing + outlier guards: no quote if edge > 8¢ (`max_edge`) or the sharps disagree by > 4¢ (`max_sharp_spread`); `Config` holds all knobs
 - `mapping.py` — Kalshi↔vendor ticker matching: normalize → exact → fuzzy → overrides.csv; unmatched and ambiguous lines never trade

@@ -52,12 +52,12 @@ class Quote:
 
 def retail_best_no_price(dk_fd: list[BookQuote]) -> float | None:
     """Best (lowest) vigged NO price a retail bettor can get at DK/FD."""
-    prices = [american_to_prob(q.no_american) for q in dk_fd]
+    prices = [american_to_prob(q.no_american) for q in dk_fd if q.no_american is not None]
     return min(prices) if prices else None
 
 
 def retail_best_yes_price(dk_fd: list[BookQuote]) -> float | None:
-    prices = [american_to_prob(q.yes_american) for q in dk_fd]
+    prices = [american_to_prob(q.yes_american) for q in dk_fd if q.yes_american is not None]
     return min(prices) if prices else None
 
 

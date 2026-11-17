@@ -36,6 +36,10 @@ class MockVendorAdapter:
             # corners ladder
             **{f"v-corn-{l}": MarketKey("corners", "Arsenal vs Chelsea", l, TODAY)
                for l in (7.5, 8.5, 9.5, 10.5, 11.5)},
+            # NFL rushing yards: sharps quote ONE main line (62.5); DK/FD sell
+            # yes-only milestones ("40+ yards") at Kalshi-style rungs.
+            **{f"v-rush-jtaylor-{l}": MarketKey("nfl_rush_yds", "Jonathan Taylor", l, TODAY)
+               for l in (24.5, 39.5, 59.5, 62.5, 79.5, 99.5)},
         }
         q = lambda y, n: {  # sharps + retail for one line
             "pinnacle": BookQuote("pinnacle", y, n),
@@ -53,6 +57,18 @@ class MockVendorAdapter:
             "v-corn-9.5": q(105, -125),
             "v-corn-10.5": q(175, -210),
             "v-corn-11.5": q(270, -330),
+            # main line ~50/50 at the sharps
+            "v-rush-jtaylor-62.5": {
+                "pinnacle": BookQuote("pinnacle", -112, -108),
+                "circa": BookQuote("circa", -110, -110),
+                "bookmaker": BookQuote("bookmaker", -108, -112),
+            },
+            # retail milestones: yes side only
+            **{f"v-rush-jtaylor-{l}": {
+                "draftkings": BookQuote("draftkings", dk, None),
+                "fanduel": BookQuote("fanduel", dk + 10, None),
+            } for l, dk in ((24.5, -2000), (39.5, -500), (59.5, -130),
+                            (79.5, +150), (99.5, +300))},
         }
         return markets, quotes
 
@@ -72,6 +88,12 @@ class MockKalshiMarkets:
             # a Kalshi market the vendor doesn't carry -> must land UNMATCHED
             "KXMLBHR-26JUL16-DELACRUZ": MarketKey("mlb_hr", "Elly De La Cruz", None, TODAY,
                                                   event_id="KXMLBHR-26JUL16CINSTL"),
+            # rushing ladder: 49.5 has no DK/FD milestone; 24.5 is too far
+            # from the sharp main line for the model to be trusted
+            **{f"KXNFLRSHYDS-26JUL16INDHOU-JTAYLOR-{int(l + .5)}":
+               MarketKey("nfl_rush_yds", "Jonathan Taylor", l, TODAY,
+                         event_id="KXNFLRSHYDS-26JUL16INDHOU")
+               for l in (24.5, 39.5, 49.5, 59.5, 79.5, 99.5)},
             **{f"KXEPLCORN-26JUL16-ARSCHE-{l}":
                MarketKey("corners", "Arsenal vs Chelsea", l, TODAY,
                          event_id="KXEPLCORNERS-26JUL16ARSCHE")

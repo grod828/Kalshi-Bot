@@ -35,12 +35,21 @@ def devig_power(p_yes: float, p_no: float, tol: float = 1e-9) -> float:
 
 @dataclass
 class BookQuote:
+    """One book's price on a yes/no line. Retail milestone props ("40+ rushing
+    yards") are often yes-only: leave the missing side None. Sharp quotes must
+    be two-sided to devig; one-sided ones are ignored by the consensus."""
     book: str
-    yes_american: int
-    no_american: int
+    yes_american: int | None
+    no_american: int | None
     ts: float = field(default_factory=time.time)
 
+    @property
+    def two_sided(self) -> bool:
+        return self.yes_american is not None and self.no_american is not None
+
     def fair_yes(self, method: str = "multiplicative") -> float:
+        if not self.two_sided:
+            raise ValueError(f"{self.book}: can't devig a one-sided quote")
         py, pn = american_to_prob(self.yes_american), american_to_prob(self.no_american)
         if method == "power":
             return devig_power(py, pn)
@@ -63,7 +72,7 @@ def consensus_fair(
     num = den = 0.0
     for q in quotes:
         w = weights.get(q.book.lower())
-        if w is None or (now - q.ts) > max_age_s:
+        if w is None or (now - q.ts) > max_age_s or not q.two_sided:
             continue
         num += w * q.fair_yes(method)
         den += w
@@ -83,7 +92,7 @@ def sharp_spread(
     weights = weights or DEFAULT_WEIGHTS
     now = now if now is not None else time.time()
     fairs = [q.fair_yes(method) for q in quotes
-             if q.book.lower() in weights and (now - q.ts) <= max_age_s]
+             if q.book.lower() in weights and (now - q.ts) <= max_age_s and q.two_sided]
     return max(fairs) - min(fairs) if len(fairs) >= 2 else None
 
 
