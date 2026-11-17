@@ -18,7 +18,7 @@ min_edge during the lineup-risk window (last 4h).
 | File | What it does | Key decisions to critique |
 |---|---|---|
 | `pricing.py` | Devig (mult + power), consensus, isotonic ladder smoothing | Book weights 50/30/20; 120s staleness; multiplicative default |
-| `quoting.py` | Quote band + sizing | min_edge 2¢, improvement 1¢, quote at bottom of band, 2%/event |
+| `quoting.py` | Quote band + sizing + outlier guards | min_edge 2¢, improvement 1¢, quote at bottom of band, 2%/event; refuse if edge > 8¢ or sharps disagree by > 4¢ |
 | `mapping.py` | Kalshi↔vendor ticker matching | 0.82 fuzzy threshold; unmatched = never trade |
 | `audit.py` + `run_phase1.py` | Coverage + band-frequency study, SQLite | 30% quotable gate; ≥20 events/day gate |
 | `kalshi_client.py` | RSA-PSS signing, demo env, dry-run | — |
@@ -53,13 +53,38 @@ min_edge during the lineup-risk window (last 4h).
     liquidity picked off overnight, or is it free flow?
 12. Maker fees per series — which series were quietly unprofitable after fees?
 
+**Inventory & news (after we're filled)**
+13. News breaks after a fill: a lineup scratch, or an injury that shifts usage
+    (e.g. we hold a backup RB's *under* rushing yards and the starter goes down).
+    Do you exit on Kalshi, hedge at a sportsbook, or hold to settlement? Our rule:
+    ignore entry price; **sell only if the Kalshi bid, net of fees, is ≥ the new
+    sharp fair**, otherwise hold, unless the position now breaches a risk limit.
+    How often is the Kalshi bid actually still above new fair after news?
+14. How fast do you pull resting quotes when news hits, and what triggers it:
+    sharp fair moving N¢, a news/injury feed, or both? What's your news-to-cancel
+    latency? (We think this matters more than what to do with filled inventory:
+    the loss happens when stale quotes get hit, not when you decide to sell.)
+15. Kalshi HR markets settle a scratched / non-starting / no-plate-appearance
+    player at **"the fair market price"** (per the market's secondary rules), not
+    void like most sportsbooks. How is that price set in practice, and has it
+    hurt you on quotes resting through the lineup window?
+16. Do you count filled inventory against the event budget immediately? We plan:
+    remaining budget = event budget − worst-case of what's already filled, and
+    all markets on the same player in one bucket (like the corners ladder).
+
 **Risk / sizing**
-13. 2% of bankroll worst-case per event, 40 concurrent — sane or aggressive?
+17. 2% of bankroll worst-case per event, 40 concurrent — sane or aggressive?
     (Pre-game-only means capital locks up from fill until settlement — did
     settlement lag ever constrain your deployable bankroll?)
-14. What's your kill-switch list? Ours: feed silence >60s, reconciliation
+18. What's your kill-switch list? Ours: feed silence >60s, reconciliation
     mismatch, error streak, 15% bankroll drawdown, and hard-pull at game start.
-15. Anything that blew up on you that isn't on this list?
+19. Outliers: we **refuse to quote when edge > 8¢ or the sharps disagree by > 4¢**,
+    on the theory that a huge edge usually means our fair is wrong (stale book,
+    bad mapping, unseen news), and because size = budget ÷ price, a cheap outlier
+    would otherwise get *more* contracts. Are those thresholds sane? Is a flat 8¢
+    wrong for longshots (a 5¢ edge on a 10% prop is huge)? Do you ever size *up*
+    on big edges? What's your max loss on any single contract or line?
+20. Anything that blew up on you that isn't on this list?
 
 **If they'll share:** fill logs or markout stats — even a week's worth recalibrates
 every parameter above better than months of our own trial and error.

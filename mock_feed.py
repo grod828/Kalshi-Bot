@@ -64,7 +64,8 @@ CORNERS_LADDER = {
             "sharps": [
                 BookQuote("pinnacle",  -160, +135),
                 BookQuote("circa",     -155, +130),
-                # bookmaker stale/crossed on purpose -> isotonic smoothing kicks in
+                # bookmaker stale/crossed on purpose -> isotonic smoothing kicks in,
+                # and the sharp-disagreement guard declines this rung
                 BookQuote("bookmaker", -190, +160),
             ],
             "dk_fd": [BookQuote("draftkings", -140, +110),

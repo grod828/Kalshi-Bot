@@ -16,6 +16,11 @@ class Config:
     improvement: float = 0.01         # beat DK/FD by >= 1c
     depth_multiple: float = 3.0       # size <= 3x top-of-book depth
     hard_cap_contracts: int = 2000
+    # Outlier guards: a huge apparent edge is more often OUR error (stale feed,
+    # bad mapping, news we haven't seen) than free money — and since size is
+    # budget / price, a cheap outlier would otherwise get MORE contracts.
+    max_edge: float = 0.08            # refuse to quote above 8c edge vs fair
+    max_sharp_spread: float = 0.04    # refuse if sharps disagree by > 4c
 
     @property
     def deployable(self) -> float:
@@ -57,11 +62,20 @@ def compute_quote(
     line_budget: float,
     cfg: Config,
     book_depth: int = 500,
+    sharp_spread: float | None = None,
 ) -> Quote | None:
     """One-way quote on `side`. Bidding YES at b fills a NO-buyer at (1-b);
     that (1-b) must beat DK/FD's NO price by >= improvement. Symmetric for NO.
 
-    Returns None (with no order) when the band is empty."""
+    sharp_spread: pricing.sharp_spread() of the books behind fair_p; above
+    cfg.max_sharp_spread we don't trust fair_p and don't quote.
+
+    Returns None when there's no retail price; otherwise a Quote, with
+    contracts=0 and a NO QUOTE reason when it declines."""
+    if sharp_spread is not None and sharp_spread > cfg.max_sharp_spread:
+        return Quote(side, 0, 0, 0.0,
+                     f"NO QUOTE: sharps disagree by {sharp_spread*100:.1f}c "
+                     f"(max {cfg.max_sharp_spread*100:.0f}c) — fair not trustworthy")
     if side == "yes":
         retail = retail_best_no_price(dk_fd)
         if retail is None:
@@ -82,6 +96,10 @@ def compute_quote(
     price = lo_c  # bottom of band = max edge; step up later if fills are scarce
     fair_side = fair_p if side == "yes" else 1 - fair_p
     edge = fair_side - price / 100
+    if edge > cfg.max_edge + 1e-9:   # tolerance: 0.37 - 0.29 != 0.08 in floats
+        return Quote(side, price, 0, edge,
+                     f"NO QUOTE: OUTLIER edge {edge*100:.1f}c > max {cfg.max_edge*100:.0f}c "
+                     f"— check feed staleness, mapping, news before trusting it")
     worst_case = price / 100  # bid price is max loss per contract
     contracts = min(
         int(line_budget / worst_case),
@@ -100,9 +118,12 @@ def size_ladder(
     dk_fd_by_line: dict[float, list[BookQuote]],
     side: str,
     cfg: Config,
+    spread_by_line: dict[float, float | None] | None = None,
 ) -> list[tuple[float, Quote | None]]:
     """Corners ladder: ONE event budget across all rungs (correlated bucket).
-    Weight rungs by proximity to 50% fair (most two-way flow), then quote each."""
+    Weight rungs by proximity to 50% fair (most two-way flow), then quote each.
+    spread_by_line: per-rung pricing.sharp_spread(), passed to compute_quote."""
+    spread_by_line = spread_by_line or {}
     if not ladder_fairs:
         return []
     weights = [max(0.05, 1 - abs(p - 0.5) * 2) for _, p in ladder_fairs]
@@ -110,6 +131,7 @@ def size_ladder(
     out = []
     for (line, fair_p), w in zip(ladder_fairs, weights):
         budget = cfg.event_budget * (w / total_w)
-        q = compute_quote(fair_p, dk_fd_by_line.get(line, []), side, budget, cfg)
+        q = compute_quote(fair_p, dk_fd_by_line.get(line, []), side, budget, cfg,
+                          sharp_spread=spread_by_line.get(line))
         out.append((line, q))
     return out

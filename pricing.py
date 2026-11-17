@@ -70,6 +70,23 @@ def consensus_fair(
     return num / den if den > 0 else None
 
 
+def sharp_spread(
+    quotes: list[BookQuote],
+    weights: dict[str, float] | None = None,
+    max_age_s: float = 120.0,
+    method: str = "multiplicative",
+    now: float | None = None,
+) -> float | None:
+    """Max - min no-vig P(yes) across the fresh sharp books that feed the
+    consensus. A wide spread means the consensus isn't trustworthy (one book
+    stale, or news half-priced in). None if fewer than 2 fresh sharps."""
+    weights = weights or DEFAULT_WEIGHTS
+    now = now if now is not None else time.time()
+    fairs = [q.fair_yes(method) for q in quotes
+             if q.book.lower() in weights and (now - q.ts) <= max_age_s]
+    return max(fairs) - min(fairs) if len(fairs) >= 2 else None
+
+
 def isotonic_decreasing(probs: list[float]) -> list[float]:
     """Pool-adjacent-violators: enforce p[0] >= p[1] >= ... (over-ladder).
     Used to smooth crossed corner-ladder rungs."""

@@ -9,7 +9,7 @@ python run_phase1.py --loop 300   # audit pass every 5 min; leave running for da
 python run_phase1.py --report     # gate report from accumulated SQLite data
 python run_phase1.py --live       # same audit against REAL Kalshi markets (public API, no key)
 python kalshi_markets.py          # just list what Kalshi has open right now
-python -m unittest -v             # offline tests for the live-market parser
+python -m unittest -v             # all tests (offline): live-market parser + quoting guards
 ```
 
 ### Live Kalshi markets (`--live`)
@@ -33,7 +33,7 @@ What it does: devigs Pinnacle/Circa/BookMaker (mock feed), builds weighted conse
 ## Files
 
 - `pricing.py` — devig (multiplicative + power), consensus, isotonic ladder smoothing
-- `quoting.py` — quote band + bankroll sizing (`Config` holds all knobs)
+- `quoting.py` — quote band + bankroll sizing + outlier guards: no quote if edge > 8¢ (`max_edge`) or the sharps disagree by > 4¢ (`max_sharp_spread`); `Config` holds all knobs
 - `mapping.py` — Kalshi↔vendor ticker matching: normalize → exact → fuzzy → overrides.csv; unmatched lines never trade
 - `vendor_adapter.py` — vendor interface + mock; a real (Unabated/OpticOdds) adapter is one class with the same `.fetch()` contract
 - `audit.py` / `run_phase1.py` — coverage + band-frequency study into SQLite, with pass/fail gate report
