@@ -4,6 +4,11 @@ Contract: an adapter returns
     markets: dict[vendor_id, MarketKey]
     quotes:  dict[vendor_id, dict[book_name, BookQuote]]   (sharps + DK/FD together)
 
+MarketKey.game_date MUST be the US Eastern date Kalshi uses: build it with
+mapping.kalshi_game_date(start_time_utc), never the UTC date (a 7pm PT first
+pitch is already tomorrow in UTC). Team names can be the vendor's own; the
+mapper normalizes them (team_aliases.py), and matchup order doesn't matter.
+
 To go live, implement UnabatedAdapter (or whichever vendor survives the trial)
 with the same two methods. Nothing else in the codebase changes.
 """
@@ -58,13 +63,18 @@ class MockKalshiMarkets:
 
     def fetch(self):
         return {
-            "KXMLBHR-26JUL16-JUDGE":  MarketKey("mlb_hr", "Aaron Judge", None, TODAY),
-            "KXMLBHR-26JUL16-OHTANI": MarketKey("mlb_hr", "Shohei Ohtani", None, TODAY),
-            "KXMLBHR-26JUL16-ACUNA":  MarketKey("mlb_hr", "Ronald Acuna", None, TODAY),
+            "KXMLBHR-26JUL16-JUDGE":  MarketKey("mlb_hr", "Aaron Judge", None, TODAY,
+                                                event_id="KXMLBHR-26JUL16NYYBOS"),
+            "KXMLBHR-26JUL16-OHTANI": MarketKey("mlb_hr", "Shohei Ohtani", None, TODAY,
+                                                event_id="KXMLBHR-26JUL16LADSF"),
+            "KXMLBHR-26JUL16-ACUNA":  MarketKey("mlb_hr", "Ronald Acuna", None, TODAY,
+                                                event_id="KXMLBHR-26JUL16ATLMIA"),
             # a Kalshi market the vendor doesn't carry -> must land UNMATCHED
-            "KXMLBHR-26JUL16-DELACRUZ": MarketKey("mlb_hr", "Elly De La Cruz", None, TODAY),
+            "KXMLBHR-26JUL16-DELACRUZ": MarketKey("mlb_hr", "Elly De La Cruz", None, TODAY,
+                                                  event_id="KXMLBHR-26JUL16CINSTL"),
             **{f"KXEPLCORN-26JUL16-ARSCHE-{l}":
-               MarketKey("corners", "Arsenal vs Chelsea", l, TODAY)
+               MarketKey("corners", "Arsenal vs Chelsea", l, TODAY,
+                         event_id="KXEPLCORNERS-26JUL16ARSCHE")
                for l in (7.5, 8.5, 9.5, 10.5, 11.5)},
         }
 

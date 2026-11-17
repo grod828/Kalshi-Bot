@@ -42,6 +42,10 @@ LINEUP_WINDOW_EXTRA_EDGE = 0.01      # +1c min_edge inside the risk window
 FUZZY_THRESHOLD = 0.82       # difflib ratio below this -> needs manual review
 OVERRIDES_CSV = "overrides.csv"
 
+# ---- Phase 1 gate (both must pass) ----
+GATE_MIN_EVENTS_PER_DAY = 20     # avg distinct games/day with >= 1 mapped line
+GATE_MIN_QUOTABLE_FRAC = 0.30    # share of priced lines with a non-empty band
+
 # ---- Audit ----
 # Live and mock runs get separate DBs so fixture passes never pollute real stats.
 AUDIT_DB = os.getenv("AUDIT_DB", "phase1_audit_live.sqlite" if KALSHI_MARKETS == "live"

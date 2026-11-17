@@ -19,7 +19,7 @@ min_edge during the lineup-risk window (last 4h).
 |---|---|---|
 | `pricing.py` | Devig (mult + power), consensus, isotonic ladder smoothing | Book weights 50/30/20; 120s staleness; multiplicative default |
 | `quoting.py` | Quote band + sizing + outlier guards | min_edge 2¢, improvement 1¢, quote at bottom of band, 2%/event; refuse if edge > 8¢ or sharps disagree by > 4¢ |
-| `mapping.py` | Kalshi↔vendor ticker matching | 0.82 fuzzy threshold; unmatched = never trade |
+| `mapping.py` + `team_aliases.py` | Kalshi↔vendor ticker matching | 0.82 fuzzy threshold; unmatched or ambiguous (doubleheaders) = never trade; Kalshi dates games in US Eastern |
 | `audit.py` + `run_phase1.py` | Coverage + band-frequency study, SQLite | 30% quotable gate; ≥20 events/day gate |
 | `kalshi_client.py` | RSA-PSS signing, demo env, dry-run | — |
 | `vendor_adapter.py` | Vendor interface + mock | The contract a real adapter must satisfy |

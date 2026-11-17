@@ -76,14 +76,16 @@ def event_to_keys(market_type: str, event: dict) -> dict[str, MarketKey]:
             matchup = event.get("title", "").split(":")[0].strip()
             if line is None or not matchup:
                 continue
-            out[mkt["ticker"]] = MarketKey("corners", matchup, line, date)
+            out[mkt["ticker"]] = MarketKey("corners", matchup, line, date,
+                                           event_id=event.get("event_ticker", ""))
         elif market_type == "mlb_hr":
             # 1+ HR only: floor_strike 0.5 with strike_type "greater"
             if (mkt.get("strike_type"), mkt.get("floor_strike")) != ("greater", 0.5):
                 continue
             player = mkt.get("title", "").split(":")[0].strip()
             if player:
-                out[mkt["ticker"]] = MarketKey("mlb_hr", player, None, date)
+                out[mkt["ticker"]] = MarketKey("mlb_hr", player, None, date,
+                                               event_id=event.get("event_ticker", ""))
     return out
 
 
