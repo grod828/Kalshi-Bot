@@ -26,6 +26,29 @@ orders. Results go to `phase1_audit_live.sqlite`, kept apart from mock runs; pas
 - The odds side is still the mock vendor, so every live line shows UNMATCHED
   and the gate report gives no verdict until a real vendor adapter exists.
 
+### Phase 1 gate
+
+Both must pass (thresholds in `config.py`):
+1. **Events/day:** on average at least 20 distinct games per game date have at least
+   one mapped line. Each game is counted once per date, however many passes saw it.
+2. **Quotable:** the quote band is non-empty on at least 30% of priced lines.
+
+The mock fixture is tiny (4 mappable games), so `python run_phase1.py` reads FAIL on
+gate 1 by design. For scale: in mid-November Kalshi lists about 5 corners games a day
+(EPL + La Liga); MLB HR adds roughly 15 games a day in season.
+
+### Matching (`mapping.py`, `team_aliases.py`)
+
+- Matchups are split into teams. Each side is normalized (accents, punctuation, club
+  tokens like FC/AS/Calcio, and numbers like "05" are dropped) and then aliased, and
+  home/away order is ignored. So Kalshi's "Bilbao vs Espanyol" matches "Athletic Club
+  v RCD Espanyol". Add aliases to `team_aliases.py` when real mismatches show up.
+- **Dates:** Kalshi files games under their **US Eastern** date. A vendor adapter must
+  set `game_date = mapping.kalshi_game_date(start_utc)`, not the UTC date. If it
+  doesn't, the UNMATCHED list says "vendor dates in UTC?".
+- **Ambiguity:** if two markets normalize to the same key (an MLB doubleheader), both
+  stay UNMATCHED rather than risk the wrong game. Resolve them with `overrides.csv`.
+
 Reviewing this for someone? Start with `FRIEND-REVIEW.md`.
 
 What it does: devigs Pinnacle/Circa/BookMaker (mock feed), builds weighted consensus fair value, computes the one-way quote band (counterparty must beat DK/FD by ≥1¢ AND we keep ≥2¢ edge vs fair), sizes from the $50k bankroll ($1,000/event, corners ladder treated as one correlated bucket), and prints dry-run orders.
@@ -35,9 +58,10 @@ What it does: devigs Pinnacle/Circa/BookMaker (mock feed), builds weighted conse
 - `pricing.py` — devig (multiplicative + power), consensus, isotonic ladder smoothing
 - `fees.py` — Kalshi fee math; edges and sizing are measured **after** fees (see below)
 - `quoting.py` — quote band + bankroll sizing + outlier guards: no quote if edge > 8¢ (`max_edge`) or the sharps disagree by > 4¢ (`max_sharp_spread`); `Config` holds all knobs
-- `mapping.py` — Kalshi↔vendor ticker matching: normalize → exact → fuzzy → overrides.csv; unmatched lines never trade
+- `mapping.py` — Kalshi↔vendor ticker matching: normalize → exact → fuzzy → overrides.csv; unmatched and ambiguous lines never trade
+- `team_aliases.py` — team-name aliases (Kalshi's short names ↔ common sportsbook names)
 - `vendor_adapter.py` — vendor interface + mock; a real (Unabated/OpticOdds) adapter is one class with the same `.fetch()` contract
-- `audit.py` / `run_phase1.py` — coverage + band-frequency study into SQLite, with pass/fail gate report
+- `audit.py` / `run_phase1.py` — coverage + band-frequency study into SQLite, with a two-part pass/fail gate report (events/day + quotable)
 - `config.py` — keys, series tickers, books, thresholds (env-var overridable)
 - `mock_feed.py` — mock sharp + DK/FD odds for `main.py`
 - `kalshi_client.py` — RSA-PSS signed Kalshi client, demo env by default
@@ -55,7 +79,7 @@ per order. Takers pay 0.07; makers pay 0.0175, but **only on series whose fee ty
 - `--live` reads each series' `fee_type` / `fee_multiplier` and applies event overrides
   (seen live: a `KXMLBHR` event overrode the series' ×0.5 to ×1).
 - Without real fee data (the mock, `main.py`, a failed lookup) the bot assumes the worst
-  case: maker fees on, ×1. That's why the mock gate reads 62%, not 88%. 2 of 3 mock HR
+  case: maker fees on, ×1. That's why the mock reads 62% quotable, not 88%. 2 of 3 mock HR
   props don't clear 2¢ once a maker fee is charged.
 - As of Nov 2026 every series in `config.KALSHI_SERIES` is plain `quadratic`, so resting
   quotes pay no fee. Rates are from public fee guides; Kalshi's fee schedule is the
