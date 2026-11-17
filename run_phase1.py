@@ -26,22 +26,25 @@ from vendor_adapter import MockKalshiMarkets, get_vendor_adapter
 
 
 def kalshi_markets():
-    """Kalshi side of the mapping: fixture, or live public market data."""
+    """Kalshi side of the mapping: fixture, or live public market data.
+    Returns (markets, fees_by_ticker); mock markets get no fee info, so the
+    audit assumes worst-case fees for them."""
     if config.KALSHI_MARKETS == "live":
         from kalshi_markets import LiveKalshiMarkets
         print(f"Kalshi markets: LIVE ({config.KALSHI_DATA_ENV}), "
               f"odds vendor: {config.VENDOR}  -> {config.AUDIT_DB}")
-        return LiveKalshiMarkets().fetch()
-    return MockKalshiMarkets().fetch()
+        live = LiveKalshiMarkets()
+        return live.fetch(), live.fees
+    return MockKalshiMarkets().fetch(), {}
 
 
 def one_pass(con) -> None:
-    kalshi = kalshi_markets()
+    kalshi, fees = kalshi_markets()
     vendor_markets, vendor_quotes = get_vendor_adapter(config.VENDOR).fetch()
     mappings = match_markets(kalshi, vendor_markets)
     print(report(mappings))
     stats = run_audit_pass(mappings, kalshi, vendor_quotes,
-                           StratConfig(bankroll=50_000), con)
+                           StratConfig(bankroll=50_000), con, fees_by_ticker=fees)
     for mtype, st in stats.items():
         print(f"  {mtype}: {st['mapped']}/{st['kalshi_lines']} mapped, "
               f"{st['sharp']} with sharp quotes, {st['retail']} with DK/FD quotes")

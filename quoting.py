@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from fees import WORST_CASE, FeeSchedule
 from pricing import BookQuote, american_to_prob
 
 
@@ -21,6 +22,10 @@ class Config:
     # budget / price, a cheap outlier would otherwise get MORE contracts.
     max_edge: float = 0.08            # refuse to quote above 8c edge vs fair
     max_sharp_spread: float = 0.04    # refuse if sharps disagree by > 4c
+    # Fees: min_edge is enforced NET of Kalshi's fee. Resting quotes are maker
+    # orders; `fees` is the fallback when a market's real schedule is unknown.
+    fee_role: str = "maker"
+    fees: FeeSchedule = WORST_CASE
 
     @property
     def deployable(self) -> float:
@@ -40,8 +45,9 @@ class Quote:
     side: str            # "yes" or "no"
     price_cents: int
     contracts: int
-    edge: float          # expected edge vs fair, in probability points
+    edge: float          # expected edge vs fair AFTER fees, in probability points
     reason: str
+    fee: float = 0.0     # Kalshi fee per contract at price_cents, in dollars
 
 
 def retail_best_no_price(dk_fd: list[BookQuote]) -> float | None:
@@ -63,12 +69,15 @@ def compute_quote(
     cfg: Config,
     book_depth: int = 500,
     sharp_spread: float | None = None,
+    fees: FeeSchedule | None = None,
 ) -> Quote | None:
     """One-way quote on `side`. Bidding YES at b fills a NO-buyer at (1-b);
     that (1-b) must beat DK/FD's NO price by >= improvement. Symmetric for NO.
 
     sharp_spread: pricing.sharp_spread() of the books behind fair_p; above
     cfg.max_sharp_spread we don't trust fair_p and don't quote.
+    fees: the market's Kalshi fee schedule (None -> cfg.fees, worst case).
+    The min_edge floor and the sizing both include the fee.
 
     Returns None when there's no retail price; otherwise a Quote, with
     contracts=0 and a NO QUOTE reason when it declines."""
@@ -89,28 +98,40 @@ def compute_quote(
         lo = 1 - retail + cfg.improvement
         hi = (1 - fair_p) - cfg.min_edge
 
+    fees = fees or cfg.fees
+    fair_side = fair_p if side == "yes" else 1 - fair_p
+
+    def fee_at(c: int) -> float:
+        return fees.per_contract(c / 100, cfg.fee_role)
+
     lo_c, hi_c = max(1, round(lo * 100)), min(99, int(hi * 100))
+    # Edge floor is net of fees: lower the top of the band until it clears.
+    while hi_c >= lo_c and fair_side - hi_c / 100 - fee_at(hi_c) < cfg.min_edge - 1e-9:
+        hi_c -= 1
     if lo_c > hi_c:
         return Quote(side, 0, 0, 0.0, f"NO QUOTE: band empty (need >= {lo_c}c to beat DK/FD, "
-                                      f"but edge floor caps at {hi_c}c)")
+                                      f"but edge floor after fees caps at {hi_c}c)")
     price = lo_c  # bottom of band = max edge; step up later if fills are scarce
-    fair_side = fair_p if side == "yes" else 1 - fair_p
-    edge = fair_side - price / 100
-    if edge > cfg.max_edge + 1e-9:   # tolerance: 0.37 - 0.29 != 0.08 in floats
+    fee = fee_at(price)
+    gross_edge = fair_side - price / 100
+    edge = gross_edge - fee
+    # Outlier check is on the gross edge: it's about our fair disagreeing with price.
+    if gross_edge > cfg.max_edge + 1e-9:   # tolerance: 0.37 - 0.29 != 0.08 in floats
         return Quote(side, price, 0, edge,
-                     f"NO QUOTE: OUTLIER edge {edge*100:.1f}c > max {cfg.max_edge*100:.0f}c "
-                     f"— check feed staleness, mapping, news before trusting it")
-    worst_case = price / 100  # bid price is max loss per contract
+                     f"NO QUOTE: OUTLIER edge {gross_edge*100:.1f}c > max {cfg.max_edge*100:.0f}c "
+                     f"— check feed staleness, mapping, news before trusting it", fee)
+    worst_case = price / 100 + fee  # bid price + fee is max loss per contract
     contracts = min(
         int(line_budget / worst_case),
         int(cfg.depth_multiple * book_depth),
         cfg.hard_cap_contracts,
     )
     if contracts < 1:
-        return Quote(side, price, 0, edge, "NO QUOTE: budget too small for 1 contract")
+        return Quote(side, price, 0, edge, "NO QUOTE: budget too small for 1 contract", fee)
     return Quote(side, price, contracts, edge,
-                 f"quote {side.upper()} {price}c x{contracts} | edge {edge:.3f} | "
-                 f"counterparty beats DK/FD ({round(retail*100)}c) at {100-price}c")
+                 f"quote {side.upper()} {price}c x{contracts} | edge {edge:.3f} "
+                 f"after {fee*100:.2f}c fee | "
+                 f"counterparty beats DK/FD ({round(retail*100)}c) at {100-price}c", fee)
 
 
 def size_ladder(
@@ -119,6 +140,7 @@ def size_ladder(
     side: str,
     cfg: Config,
     spread_by_line: dict[float, float | None] | None = None,
+    fees: FeeSchedule | None = None,
 ) -> list[tuple[float, Quote | None]]:
     """Corners ladder: ONE event budget across all rungs (correlated bucket).
     Weight rungs by proximity to 50% fair (most two-way flow), then quote each.
@@ -132,6 +154,6 @@ def size_ladder(
     for (line, fair_p), w in zip(ladder_fairs, weights):
         budget = cfg.event_budget * (w / total_w)
         q = compute_quote(fair_p, dk_fd_by_line.get(line, []), side, budget, cfg,
-                          sharp_spread=spread_by_line.get(line))
+                          sharp_spread=spread_by_line.get(line), fees=fees)
         out.append((line, q))
     return out

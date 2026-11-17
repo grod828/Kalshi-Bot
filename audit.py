@@ -43,7 +43,11 @@ def run_audit_pass(
     strat: StratConfig,
     con: sqlite3.Connection,
     side: str = "yes",
+    fees_by_ticker: dict | None = None,         # ticker -> fees.FeeSchedule
 ) -> dict:
+    """fees_by_ticker: real Kalshi fee schedules (live runs). Tickers without
+    one use strat.fees, the worst-case assumption."""
+    fees_by_ticker = fees_by_ticker or {}
     ts = time.time()
     by_type: dict[str, dict] = {}
     line_budget = strat.event_budget / strat.lines_per_event_hr
@@ -74,7 +78,8 @@ def run_audit_pass(
         if fair is None:
             continue
         q = compute_quote(fair, retail, side, line_budget, strat,
-                          sharp_spread=sharp_spread(sharps, max_age_s=config.MAX_QUOTE_AGE_S))
+                          sharp_spread=sharp_spread(sharps, max_age_s=config.MAX_QUOTE_AGE_S),
+                          fees=fees_by_ticker.get(m.kalshi_ticker))
         quotable = int(q is not None and q.contracts > 0)
         con.execute(
             "INSERT INTO band_log VALUES (?,?,?,?,?,?,?,?,?,?,?)",
