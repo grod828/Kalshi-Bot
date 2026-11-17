@@ -17,7 +17,7 @@ from collections import defaultdict
 import config
 from ladders import fit_ladder
 from mapping import Mapping, MarketKey, ladder_group
-from pricing import BookQuote, consensus_fair, sharp_spread
+from pricing import BookQuote, consensus_fair, field_consensus, sharp_spread
 from quoting import Config as StratConfig
 from quoting import compute_quote
 
@@ -87,6 +87,32 @@ def _ladder_inputs(kmk: MarketKey, vendor_id: str, vendor_markets: dict,
             config.LADDER_MODEL_EXTRA_EDGE, "")
 
 
+def _field_inputs(vendor_id: str, vendor_markets: dict, vendor_quotes: dict, cache: dict):
+    """Fair value for one outcome of a field market (first TD scorer): each
+    sharp book's whole field for the game is devigged, then averaged.
+    Returns (fair, spread_across_books, retail, skip_reason)."""
+    vmk = vendor_markets.get(vendor_id)
+    if vmk is None:
+        return None, None, [], "vendor market missing"
+    _, retail = _split_books(vendor_quotes.get(vendor_id, {}))
+    if not vmk.event_id:
+        return None, None, retail, "vendor market has no event_id to group its field"
+    key = (vmk.market_type, vmk.event_id)
+    if key not in cache:
+        field = {}   # outcome -> {sharp book: quote}, for every outcome in this game
+        for vid, mk in vendor_markets.items():
+            if mk.market_type == vmk.market_type and mk.event_id == vmk.event_id:
+                field[vid] = {b: q for b, q in vendor_quotes.get(vid, {}).items()
+                              if b in config.SHARP_BOOKS}
+        cache[key] = field_consensus(field, max_age_s=config.MAX_QUOTE_AGE_S,
+                                     method=config.FIELD_DEVIG,
+                                     min_overround=config.FIELD_MIN_OVERROUND)
+    if vendor_id not in cache[key]:
+        return None, None, retail, "no sharp field price (stale, or book's field incomplete)"
+    fair, spread = cache[key][vendor_id]
+    return fair, spread, retail, ""
+
+
 def run_audit_pass(
     mappings: list[Mapping],
     kalshi_markets: dict,                       # ticker -> MarketKey
@@ -104,6 +130,10 @@ def run_audit_pass(
     side: default; config.QUOTE_SIDE overrides it per market type."""
     fees_by_ticker = fees_by_ticker or {}
     ladder_cache: dict = {}
+    field_cache: dict = {}
+    # Field markets: only one outcome's NO can lose, so each outcome may use a
+    # share of the whole event budget (see config.FIELD_OUTCOME_BUDGET_FRAC).
+    field_budget = strat.event_budget * config.FIELD_OUTCOME_BUDGET_FRAC
     ts = time.time()
     by_type: dict[str, dict] = {}
     events: dict[str, dict] = {}     # game -> per-pass counts, for events/day
@@ -127,28 +157,32 @@ def run_audit_pass(
         if m.status == "fuzzy":
             st["fuzzy"] += 1
 
+        extra, skip, budget = 0.0, "", line_budget
         if mtype in config.LADDER_TYPES and vendor_markets is not None:
             fair, sharps, retail, extra, skip = _ladder_inputs(
                 kmk, m.vendor_id, vendor_markets, vendor_quotes, ladder_cache)
-            if skip:
-                st["skipped"][skip.split(" (")[0]] = st["skipped"].get(skip.split(" (")[0], 0) + 1
-            if fair is not None:
-                st["sharp"] += 1
-                st["modeled"] += int(extra > 0)
+            spread = sharp_spread(sharps, max_age_s=config.MAX_QUOTE_AGE_S)
+            st["modeled"] += int(fair is not None and extra > 0)
+        elif mtype in config.FIELD_TYPES and vendor_markets is not None:
+            fair, spread, retail, skip = _field_inputs(
+                m.vendor_id, vendor_markets, vendor_quotes, field_cache)
+            budget = field_budget
         else:
             sharps, retail = _split_books(vendor_quotes.get(m.vendor_id, {}))
             fair = consensus_fair(sharps, max_age_s=config.MAX_QUOTE_AGE_S) if sharps else None
-            extra = 0.0
-            st["sharp"] += int(bool(sharps))
+            spread = sharp_spread(sharps, max_age_s=config.MAX_QUOTE_AGE_S)
+        if skip:
+            why = skip.split(" (")[0]
+            st["skipped"][why] = st["skipped"].get(why, 0) + 1
+        st["sharp"] += int(fair is not None)
         if retail:
             st["retail"] += 1
         if fair is None or not retail:
             continue
 
         line_cfg = dataclasses.replace(strat, min_edge=strat.min_edge + extra) if extra else strat
-        q = compute_quote(fair, retail, config.QUOTE_SIDE.get(mtype, side), line_budget, line_cfg,
-                          sharp_spread=sharp_spread(sharps, max_age_s=config.MAX_QUOTE_AGE_S),
-                          fees=fees_by_ticker.get(m.kalshi_ticker))
+        q = compute_quote(fair, retail, config.QUOTE_SIDE.get(mtype, side), budget, line_cfg,
+                          sharp_spread=spread, fees=fees_by_ticker.get(m.kalshi_ticker))
         quotable = int(q is not None and q.contracts > 0)
         ev["quotable"] += quotable
         con.execute(

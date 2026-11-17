@@ -11,6 +11,9 @@ wrong game, wrong line). Rules here:
   - ladder markets (config.LADDER_TYPES) with no vendor market at that exact
     line but the same player/date      -> "model": priced off the player's
                                            sharp lines by ladders.py
+  - field markets (config.FIELD_TYPES): outcomes that exist in every game
+    ("No Touchdown") are matched WITHIN the game: the game's other mapped
+    outcomes identify the vendor's game (needs vendor MarketKey.event_id)
 Matchups ("Man City vs Fulham") are compared side by side: each team is
 normalized and aliased (team_aliases.py), and home/away order is ignored.
 """
@@ -21,7 +24,7 @@ import datetime as dt
 import os
 import re
 import unicodedata
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
@@ -40,11 +43,12 @@ CLUB_TOKENS = {
 
 
 def norm(s: str) -> str:
-    """Lowercase, strip accents/punctuation/suffixes: 'Ronald Acuña Jr.' -> 'ronald acuna'.
+    """Lowercase, strip accents/punctuation/suffixes: 'Ronald Acuña Jr.' -> 'ronald acuna',
+    'C.J. Stroud' -> 'cj stroud' (periods dropped so initials match 'CJ').
     Whole-string team aliases still apply (single-team entities)."""
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
-    s = SUFFIXES.sub("", s.lower())
-    s = re.sub(r"[^a-z0-9. ]", " ", s)
+    s = SUFFIXES.sub("", s.lower()).replace(".", "")
+    s = re.sub(r"[^a-z0-9 ]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return TEAM_ALIASES.get(s, s)
 
@@ -59,10 +63,21 @@ def norm_team(s: str) -> str:
     return TEAM_ALIASES.get(n, n)
 
 
+NO_TD = re.compile(r"^\s*no\s+(td|touchdown)(\s+scorer)?\s*$", re.I)
+DST = re.compile(r"\b(d\s*/\s*st|dst|defen[cs]e(\s*/\s*special teams)?|special teams)\b", re.I)
+
+
 def norm_entity(s: str) -> str:
     """Matchups are normalized per team and sorted, so 'Man City vs Fulham',
     'Fulham @ Manchester City FC' and 'Manchester City v Fulham' all agree.
-    Anything else (a player name) goes through norm()."""
+    Field outcomes: 'No Touchdown' / 'No TD Scorer' -> 'no touchdown';
+    'HOU Texans D/ST' / 'Houston Texans Defense' -> 'dst texans' (nickname:
+    unique in the NFL). Anything else (a player name) goes through norm()."""
+    if NO_TD.match(s):
+        return "no touchdown"
+    if DST.search(s):
+        words = norm(DST.sub(" ", s)).split()
+        return f"dst {words[-1]}" if words else "dst"
     parts = MATCHUP_SEP.split(s.strip())
     if len(parts) == 2 and all(p.strip() for p in parts):
         return " vs ".join(sorted(norm_team(p) for p in parts))
@@ -214,6 +229,38 @@ def match_markets(
                         f"in UTC? set game_date with mapping.kalshi_game_date()")
                 break
         out.append(Mapping(ticker, best_vid, best, "unmatched", note))
+    return _match_within_games(out, kalshi, vendor)
+
+
+def _match_within_games(out: list[Mapping], kalshi: dict[str, MarketKey],
+                        vendor: dict[str, MarketKey]) -> list[Mapping]:
+    """Second pass for field markets: a Kalshi game's mapped outcomes tell us
+    which vendor game it is; unmatched outcomes ("No Touchdown" is in every
+    game, so its key is ambiguous) are then matched inside that game only."""
+    field = config.FIELD_TYPES
+    games: dict[str, Counter] = defaultdict(Counter)    # kalshi event -> vendor events
+    for m in out:
+        kmk, vmk = kalshi[m.kalshi_ticker], vendor.get(m.vendor_id)
+        if (kmk.market_type in field and m.status in ("exact", "fuzzy", "override")
+                and kmk.event_id and vmk and vmk.event_id):
+            games[kmk.event_id][vmk.event_id] += 1
+    in_game: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for vid, vmk in vendor.items():
+        if vmk.market_type in field and vmk.event_id:
+            in_game[(vmk.event_id, norm_entity(vmk.entity))].append(vid)
+    for i, m in enumerate(out):
+        kmk = kalshi[m.kalshi_ticker]
+        if m.status != "unmatched" or kmk.market_type not in field or not games.get(kmk.event_id):
+            continue
+        vgames = games[kmk.event_id]
+        if len(vgames) > 1:
+            out[i] = Mapping(m.kalshi_ticker, "", 0.0, "unmatched",
+                             f"this game's outcomes map to {len(vgames)} vendor games: check mapping")
+            continue
+        vids = in_game.get((next(iter(vgames)), norm_entity(kmk.entity)), [])
+        if len(vids) == 1:
+            out[i] = Mapping(m.kalshi_ticker, vids[0], 1.0, "exact",
+                             "matched within its game via the game's other outcomes")
     return out
 
 

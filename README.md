@@ -62,6 +62,28 @@ Kalshi lists about 10 rungs per player (`KXNFLRSHYDS`, `KXNFLRECYDS`: "Jonathan 
   player's ladder (status `model`).
 - **Fees:** both series are plain `quadratic`, so resting orders pay nothing.
 
+### NFL first TD scorer (`KXNFLFIRSTTD`)
+
+One Kalshi market per outcome: about 20 players, both D/STs ("HOU Texans D/ST"), and
+"No Touchdown". Kalshi lists only likely scorers; if an unlisted player scores first,
+every listed market resolves No.
+
+- **Pricing:** books quote first TD yes-only, as a list. Each sharp book's whole field
+  for the game is devigged (`pricing.devig_field`: power method by default, which
+  takes more vig off longshots), then averaged across books. A book whose field sums
+  to less than 1.05 is skipped, since it's missing outcomes. The vendor must group a
+  game's outcomes with `MarketKey.event_id` and should include players Kalshi doesn't list.
+- **Side and risk:** we bid **NO** on each outcome (selling the longshots retail buys
+  at DK/FD). Only the first scorer's NO can lose, so a game's worst case is its single
+  largest NO position. Each outcome may use `FIELD_OUTCOME_BUDGET_FRAC` (50%) of the
+  event budget, which leaves room for inactive players settling at Kalshi's "fair
+  market price".
+- **Matching:** D/STs normalize to the team nickname ("Houston Texans Defense" →
+  `dst texans`), initials match ("C.J." = "CJ"), and "No Touchdown" (present in every
+  game) is matched inside its game via the game's other mapped outcomes.
+- **Fees:** this series **charges maker fees** (`quadratic_with_maker_fees`). At typical
+  NO prices of 85–95¢ that's about 0.1–0.25¢ a contract, already netted out.
+
 ### Matching (`mapping.py`, `team_aliases.py`)
 
 - Matchups are split into teams. Each side is normalized (accents, punctuation, club
@@ -82,6 +104,7 @@ What it does: devigs Pinnacle/Circa/BookMaker (mock feed), builds weighted conse
 
 - `pricing.py` — devig (multiplicative + power), consensus, isotonic ladder smoothing
 - `ladders.py` — NFL yardage ladders: lognormal fitted to the sharp lines prices every Kalshi rung
+- `pricing.py` also devigs one-sided multi-outcome fields (`devig_field`, `field_consensus`) for first TD scorer
 - `fees.py` — Kalshi fee math; edges and sizing are measured **after** fees (see below)
 - `quoting.py` — quote band + bankroll sizing + outlier guards: no quote if edge > 8¢ (`max_edge`) or the sharps disagree by > 4¢ (`max_sharp_spread`); `Config` holds all knobs
 - `mapping.py` — Kalshi↔vendor ticker matching: normalize → exact → fuzzy → overrides.csv; unmatched and ambiguous lines never trade

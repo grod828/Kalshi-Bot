@@ -13,6 +13,9 @@ Kalshi conventions handled here (verified against the live API, Nov 2026):
               the strategy only quotes the 1+ prop.
   yards    "Jonathan Taylor: 25+ rushing yards", strike_type=greater,
            floor_strike=24.5 -> line 24.5 (player = entity; ladders.py prices it)
+  1st TD   "Nico Collins: 1st Touchdown" -> entity "Nico Collins", one market
+           per outcome incl. "HOU Texans D/ST" and "No Touchdown". Kalshi lists
+           only likely scorers: an unlisted scorer resolves every market No.
   date     taken from the event ticker (KXEPLCORNERS-26NOV23BREEVE -> 2026-11-23),
            which is the "originally scheduled" date in Kalshi's rules text.
 
@@ -88,6 +91,13 @@ def event_to_keys(market_type: str, event: dict) -> dict[str, MarketKey]:
             if player:
                 out[mkt["ticker"]] = MarketKey(market_type, player, float(mkt["floor_strike"]),
                                                date, event_id=event.get("event_ticker", ""))
+        elif market_type in config.FIELD_TYPES:
+            # "Nico Collins: 1st Touchdown", "HOU Texans D/ST: 1st Touchdown",
+            # "No Touchdown: 1st Touchdown" (strike_type "structured")
+            outcome = mkt.get("title", "").split(":")[0].strip()
+            if outcome:
+                out[mkt["ticker"]] = MarketKey(market_type, outcome, None, date,
+                                               event_id=event.get("event_ticker", ""))
         elif market_type == "mlb_hr":
             # 1+ HR only: floor_strike 0.5 with strike_type "greater"
             if (mkt.get("strike_type"), mkt.get("floor_strike")) != ("greater", 0.5):

@@ -22,12 +22,23 @@ KALSHI_SERIES = {
                 "KXSERIEACORNERS", "KXBUNDESLIGACORNERS", "KXLIGUE1CORNERS"],
     "nfl_rush_yds": ["KXNFLRSHYDS"],  # "Jonathan Taylor: 25+ rushing yards" ladders
     "nfl_rec_yds": ["KXNFLRECYDS"],   # receiving yards ladders
+    "nfl_first_td": ["KXNFLFIRSTTD"], # first TD scorer: one market per player/D-ST/No TD
 }
 
 # Which side we bid, per market type (one-way). Yardage: we sell the
 # milestone overs retail likes (bid NO), like holding "under 40 yards".
 QUOTE_SIDE = {"mlb_hr": "yes", "corners": "yes",
-              "nfl_rush_yds": "no", "nfl_rec_yds": "no"}
+              "nfl_rush_yds": "no", "nfl_rec_yds": "no", "nfl_first_td": "no"}
+
+# ---- Field markets: exactly one outcome wins (first TD scorer) ----
+FIELD_TYPES = {"nfl_first_td"}
+FIELD_DEVIG = "power"            # "power" (more vig off longshots) | "multiplicative"
+FIELD_MIN_OVERROUND = 1.05       # skip a book whose field sums lower: it's missing outcomes
+# We bid NO on each outcome; only the first scorer's NO can lose, so a game's
+# worst case is its single largest NO position. Each outcome may use this
+# share of the event budget; < 1 leaves room for inactive players settling at
+# Kalshi's "fair market price" instead of 0/1.
+FIELD_OUTCOME_BUDGET_FRAC = 0.5
 
 # ---- Player yardage ladders (ladders.py) ----
 # Rungs are priced from a lognormal fitted to the player's sharp lines.
@@ -60,7 +71,7 @@ OVERRIDES_CSV = "overrides.csv"
 
 # ---- Phase 1 gate: judged PER SPORT (both parts must pass for a sport) ----
 SPORT_OF = {"mlb_hr": "mlb", "corners": "soccer",
-            "nfl_rush_yds": "nfl", "nfl_rec_yds": "nfl"}
+            "nfl_rush_yds": "nfl", "nfl_rec_yds": "nfl", "nfl_first_td": "nfl"}
 # Part 1: avg distinct games with >= 1 mapped line, per day or per week.
 # Weeks run Tuesday-Monday (one NFL week Thu-Mon; one soccer round Fri-Mon).
 # PLACEHOLDER thresholds; set them from what each sport can actually supply:
